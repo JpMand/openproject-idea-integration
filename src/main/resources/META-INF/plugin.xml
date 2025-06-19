@@ -1,15 +1,18 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
-    <id>com.github.jpmand.openprojectideaintegration</id>
-    <name>openproject-idea-integration</name>
-    <vendor>jpmand</vendor>
+    <id>com.github.jpmand.openproject.integration</id>
+    <name>OpenProject Integration</name>
+    <version>0.0.1</version>
+
+    <vendor url="https://github.com/JpMand">jpmand</vendor>
+
+    <description>Provides integration for OpenProject. Enables view/create/update/delete of Work Packages</description>
+
+    <idea-version since-build="251.*"/>
 
     <depends>com.intellij.modules.platform</depends>
 
-    <resource-bundle>messages.MyBundle</resource-bundle>
-
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="com.github.jpmand.openprojectideaintegration.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
-        <postStartupActivity implementation="com.github.jpmand.openprojectideaintegration.startup.MyProjectActivity" />
+
     </extensions>
 </idea-plugin>
