@@ -11,8 +11,17 @@
     <idea-version since-build="251.*"/>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.tasks</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+        <applicationConfigurable
+                id="com.github.jpmand.openproject.integration.settings.OPSettingsConfigurable"
+                parentId="tools"
+                instance="com.github.jpmand.openproject.integration.settings.OPSettingsConfigurable"
+                displayName="OpenProject Settings"
+        />
+        <applicationService serviceImplementation="com.github.jpmand.openproject.integration.settings.OPSettings"/>
+
 
     </extensions>
 </idea-plugin>
