@@ -2,8 +2,11 @@ package com.github.jpmand.openproject.integration.tasks;
 
 import com.github.jpmand.openproject.integration.models.wp.OPWorkPackage;
 import com.intellij.icons.AllIcons;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.tasks.Comment;
 import com.intellij.tasks.Task;
+import com.intellij.tasks.TaskState;
 import com.intellij.tasks.TaskType;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
@@ -72,7 +75,24 @@ public class OpenProjectWPTask extends Task {
     }
 
     @Override
+    public @Nullable OpenProjectRepository getRepository() {
+        return repository;
+    }
+
+    @Override
+    public @Nullable TaskState getState() {
+        //TODO
+        return super.getState();
+    }
+
+
+    @Override
     public @Nullable String getIssueUrl() {
-        return opWPObject.getLinks().getLinkBy(OPWorkPackage.SELF_LINK).get().getHref();
+        return repository.getUrl() + opWPObject.getLinks().getLinkBy(OPWorkPackage.SELF_LINK).get().getHref();
+    }
+
+    @Override
+    public @Nullable String getProject() {
+        return opWPObject.getLinks().getLinkBy(OPWorkPackage.PROJECT_LINK).get().getTitle();
     }
 }
