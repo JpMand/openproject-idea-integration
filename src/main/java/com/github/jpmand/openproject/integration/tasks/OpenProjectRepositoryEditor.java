@@ -12,7 +12,7 @@ import javax.swing.*;
 
 public class OpenProjectRepositoryEditor extends BaseRepositoryEditor<OpenProjectRepository> {
     private static final Logger LOG = Logger.getInstance(OpenProjectRepositoryEditor.class);
-
+    //TODO
     private JBPasswordField opApiKeyField;
 
     public OpenProjectRepositoryEditor(Project project, OpenProjectRepository repository, Consumer<? super OpenProjectRepository> changeListener) {
@@ -29,16 +29,15 @@ public class OpenProjectRepositoryEditor extends BaseRepositoryEditor<OpenProjec
         myTestButton.setEnabled(StringUtil.isNotEmpty(myRepository.getPassword()));
     }
 
-
     @Override
     protected @Nullable JComponent createCustomPanel() {
+        //TODO
         return super.createCustomPanel();
     }
 
     @Override
     public void apply() {
+        //TODO
         super.apply();
     }
-
-
 }

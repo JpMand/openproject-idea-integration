@@ -37,6 +37,6 @@ public class OpenProjectRepositoryType extends BaseRepositoryType<OpenProjectRep
 
     @Override
     public @NotNull TaskRepositoryEditor createEditor(OpenProjectRepository repository, Project project, Consumer<? super OpenProjectRepository> changeListener) {
-        return null;//TODO
+        return new OpenProjectRepositoryEditor(project, repository, changeListener);
     }
 }

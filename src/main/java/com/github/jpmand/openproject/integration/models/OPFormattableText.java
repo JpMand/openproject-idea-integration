@@ -12,4 +12,28 @@ public class OPFormattableText {
 
     @JsonProperty("html")
     private String html;
+
+    public String getFormat() {
+        return format;
+    }
+
+    public void setFormat(String format) {
+        this.format = format;
+    }
+
+    public String getRaw() {
+        return raw;
+    }
+
+    public void setRaw(String raw) {
+        this.raw = raw;
+    }
+
+    public String getHtml() {
+        return html;
+    }
+
+    public void setHtml(String html) {
+        this.html = html;
+    }
 }
