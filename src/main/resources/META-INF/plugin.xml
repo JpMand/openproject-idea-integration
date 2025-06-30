@@ -22,6 +22,7 @@
         />
         <applicationService serviceImplementation="com.github.jpmand.openproject.integration.settings.OPSettings"/>
 
+        <tasks.repositoryType implementation="com.github.jpmand.openproject.integration.tasks.OpenProjectRepositoryType"/>
 
     </extensions>
 </idea-plugin>

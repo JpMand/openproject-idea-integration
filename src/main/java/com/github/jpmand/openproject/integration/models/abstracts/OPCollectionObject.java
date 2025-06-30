@@ -1,9 +1,8 @@
 package com.github.jpmand.openproject.integration.models.abstracts;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.github.jpmand.openproject.integration.models.BasicLinkObject;
 
-public class OPAbstractCollection<T extends BasicLinkObject> extends OPObject {
+public class OPCollectionObject extends OPObject {
 
     public static final String SELF_LINK = "self";
     public static final String CHANGESIZE_LINK = "changeSize";
@@ -26,10 +25,35 @@ public class OPAbstractCollection<T extends BasicLinkObject> extends OPObject {
     @JsonProperty("offset")
     private Integer offset;
 
-    @JsonProperty("groups")
-    private OPObject groups;
+    public Integer getTotal() {
+        return total;
+    }
 
-    @JsonProperty("totalSums")
-    private OPObject totalSums;
+    public void setTotal(Integer total) {
+        this.total = total;
+    }
 
+    public Integer getPageSize() {
+        return pageSize;
+    }
+
+    public void setPageSize(Integer pageSize) {
+        this.pageSize = pageSize;
+    }
+
+    public Integer getCount() {
+        return count;
+    }
+
+    public void setCount(Integer count) {
+        this.count = count;
+    }
+
+    public Integer getOffset() {
+        return offset;
+    }
+
+    public void setOffset(Integer offset) {
+        this.offset = offset;
+    }
 }
