@@ -1,6 +1,11 @@
 package com.github.jpmand.openproject.integration.tasks;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.jpmand.openproject.integration.api.OPApiBasicAuthenticator;
 import com.github.jpmand.openproject.integration.models.abstracts.OPCollectionObject;
+import com.github.jpmand.openproject.integration.models.enums.FilterOperator;
+import com.github.jpmand.openproject.integration.models.filters.OPFilterObject;
+import com.github.jpmand.openproject.integration.models.filters.OPFilterValue;
 import com.github.jpmand.openproject.integration.models.wp.OPWorkPackage;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.text.StringUtil;
@@ -10,58 +15,65 @@ import com.intellij.tasks.impl.BaseRepository;
 import com.intellij.tasks.impl.httpclient.NewBaseRepositoryImpl;
 import com.intellij.util.xmlb.annotations.Tag;
 import de.otto.edison.hal.HalParser;
-import org.apache.http.HttpHost;
-import org.apache.http.HttpResponse;
-import org.apache.http.NameValuePair;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpRequestBase;
-import org.apache.http.client.utils.URIBuilder;
-import org.apache.http.message.BasicNameValuePair;
-import org.apache.http.util.EntityUtils;
+import okhttp3.*;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 @Tag("OpenProject")
 public class OpenProjectRepository extends NewBaseRepositoryImpl {
     private static final Logger LOG = Logger.getInstance(OpenProjectRepository.class);
-
+    private OkHttpClient client = null;
 
     public OpenProjectRepository() {
         super();
+        getHttpClient(getPassword());
     }
 
     public OpenProjectRepository(OpenProjectRepositoryType type) {
         super(type);
+        getHttpClient(getPassword());
     }
 
     public OpenProjectRepository(OpenProjectRepository other) {
         super(other);
         setPassword(other.getPassword());
         setUrl(other.getUrl());
+        getHttpClient(getPassword());
+    }
+
+    private OkHttpClient getHttpClient(String apiKey) {
+        if (null == client) {
+            client = new OkHttpClient.Builder()
+                    .authenticator(new OPApiBasicAuthenticator("apikey", apiKey))
+                    .build();
+        }
+        return client;
     }
 
     @Override
     public boolean isConfigured() {
-        //TODO CHECK CONFIGURE CHECKS
         return super.isConfigured() && StringUtil.isNotEmpty(getUrl()) && StringUtil.isNotEmpty(getPassword());
     }
 
     @Override
     public @Nullable Task findTask(@NotNull String id) throws Exception {
-        List<NameValuePair> params = new ArrayList<>();
-        params.add(new BasicNameValuePair("offset", "1"));
-        params.add(new BasicNameValuePair("sortBy", "[[\"id\", \"asc\"]]"));
-        params.add(new BasicNameValuePair("filters", "[{ \"id\": { \"operator\": \"=\", \"values\": [\"" + id.trim() + "\"]}}]"));
-        String response = apiCall("work_packages", params);
-        List<OPWorkPackage> wps = HalParser.parse(response).as(OPCollectionObject.class).getEmbedded().getItemsBy("elements", OPWorkPackage.class);
+        Map<String, String> parameters = new HashMap<>();
+        parameters.put("offset", "0");
+        parameters.put("pageSize", "1");
+        List<Map<String, OPFilterValue>> filters = new ArrayList<>();
+        filters.add(OPFilterObject.from("id", OPFilterValue.of(FilterOperator.EQUALS, id)));
+        parameters.put("filters", new ObjectMapper().writeValueAsString(filters));
+
+        Response response = getRequest("work_packages", parameters);
+
+        if (response.code() != 200 || null == response.body()) {
+            return null;
+        }
+        String body = response.body().string();
+
+        List<OPWorkPackage> wps = HalParser.parse(body).as(OPCollectionObject.class).getEmbedded().getItemsBy("elements", OPWorkPackage.class);
         if (!wps.isEmpty()) {
             return new OpenProjectWPTask(this, wps.getFirst());
         }
@@ -70,18 +82,26 @@ public class OpenProjectRepository extends NewBaseRepositoryImpl {
 
     @Override
     public Task[] getIssues(@Nullable String query, int offset, int limit, boolean withClosed) throws Exception {
-        List<NameValuePair> params = new ArrayList<>();
-        params.add(new BasicNameValuePair("offset", Integer.toString(offset)));
-        params.add(new BasicNameValuePair("pageSize", Integer.toString(limit)));
-        params.add(new BasicNameValuePair("sortBy", "[[\"id\", \"asc\"]]"));
-        List<String> filters = new ArrayList<>();
-        filters.add("{\"assignee\":{\"operator\":\"=\",\"values\":[\"me\"]}}");
+
+        Map<String, String> parameters = new HashMap<>();
+        parameters.put("offset", Integer.toString(offset));
+        parameters.put("pageSize", Integer.toString(limit));
+        parameters.put("sortBy", "[[\"id\", \"asc\"]]");
+
+        List<Map<String, OPFilterValue>> filters = new ArrayList<>();
+        filters.add(OPFilterObject.from("assignee", OPFilterValue.of(FilterOperator.EQUALS, "me")));
         if (!withClosed) {
-            filters.add("{\"status\":{\"operator\":\"o\",\"values\":[]}}");
+            filters.add(OPFilterObject.from("status", OPFilterValue.of(FilterOperator.WK_OPEN)));
         }
-        params.add(new BasicNameValuePair("filters", "[".concat(String.join(",", filters)).concat("]")));
-        String response = apiCall("work_packages", params);
-        List<OPWorkPackage> wps = HalParser.parse(response).as(OPCollectionObject.class).getEmbedded().getItemsBy("elements", OPWorkPackage.class);
+        parameters.put("filters", new ObjectMapper().writeValueAsString(filters));
+
+        Response response = getRequest("work_packages", parameters);
+
+        if (response.code() != 200 || null == response.body()) {
+            return new Task[0];
+        }
+        String body = response.body().string();
+        List<OPWorkPackage> wps = HalParser.parse(body).as(OPCollectionObject.class).getEmbedded().getItemsBy("elements", OPWorkPackage.class);
         return wps.stream().map(wp -> new OpenProjectWPTask(this, wp)).toArray(Task[]::new);
     }
 
@@ -129,22 +149,42 @@ public class OpenProjectRepository extends NewBaseRepositoryImpl {
         return false;
     }
 
-    private HttpRequestBase apiGetRequest(String apiMethod, List<NameValuePair> params) throws URISyntaxException {
-        HttpGet post = new HttpGet(getRestApiUrl(apiMethod));
+    private Response getRequest(String apiMethod, Map<String, String> params) throws Exception {
 
-        final String basicAuth = "Basic " + org.apache.commons.codec.binary.Base64.encodeBase64String(("apikey:" + myPassword).getBytes());
-        post.setHeader("Authorization", basicAuth);
-        post.setHeader("Accept", "*/*");
-        URI uri = new URIBuilder(post.getURI()).addParameters(params).setCharset(StandardCharsets.UTF_8).build();
-        post.setURI(uri);
+        final HttpUrl.Builder urlBuilder = HttpUrl.parse(getRestApiUrl(apiMethod)).newBuilder();
 
-        return post;
+        params.entrySet().stream().forEach(entry -> urlBuilder.addQueryParameter(entry.getKey(), entry.getValue()));
+
+        final HttpUrl url = urlBuilder.build();
+
+        return makeRequest(url, "GET", null);
     }
 
+    private Response postRequest(String apiMethod, Map<String, String> params, Object body) throws Exception {
 
-    private String apiCall(String apiMethod, List<NameValuePair> params) throws Exception {
-        final HttpResponse response = getHttpClient().execute(apiGetRequest(apiMethod, params));
-        return EntityUtils.toString(response.getEntity());
+        final HttpUrl.Builder urlBuilder = HttpUrl.parse(getRestApiUrl(apiMethod)).newBuilder();
+
+        params.entrySet().stream().forEach(entry -> urlBuilder.addQueryParameter(entry.getKey(), entry.getValue()));
+
+        final HttpUrl url = urlBuilder.build();
+
+        return makeRequest(url, "POST", body);
     }
+
+    private Response makeRequest(HttpUrl url, String method, Object body) throws Exception {
+
+        RequestBody reqBody = null;
+        if (null != body) {
+            reqBody = RequestBody.create(new ObjectMapper().writeValueAsString(body).getBytes());
+        }
+
+        final Request req = new Request.Builder()
+                .url(url)
+                .method(method, reqBody)
+                .build();
+
+        return getHttpClient(getPassword()).newCall(req).execute();
+    }
+
 }
 
