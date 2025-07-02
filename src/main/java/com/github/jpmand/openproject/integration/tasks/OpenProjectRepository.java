@@ -1,7 +1,6 @@
 package com.github.jpmand.openproject.integration.tasks;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.jpmand.openproject.integration.api.OPApiBasicAuthenticator;
 import com.github.jpmand.openproject.integration.models.abstracts.OPCollectionObject;
 import com.github.jpmand.openproject.integration.models.enums.FilterOperator;
 import com.github.jpmand.openproject.integration.models.filters.OPFilterObject;
@@ -25,31 +24,35 @@ import java.util.*;
 public class OpenProjectRepository extends NewBaseRepositoryImpl {
     private static final Logger LOG = Logger.getInstance(OpenProjectRepository.class);
     private OkHttpClient client = null;
+    private ObjectMapper mapper = new ObjectMapper();
 
     public OpenProjectRepository() {
         super();
-        getHttpClient(getPassword());
     }
 
     public OpenProjectRepository(OpenProjectRepositoryType type) {
         super(type);
-        getHttpClient(getPassword());
     }
 
     public OpenProjectRepository(OpenProjectRepository other) {
         super(other);
         setPassword(other.getPassword());
         setUrl(other.getUrl());
-        getHttpClient(getPassword());
     }
 
     private OkHttpClient getHttpClient(String apiKey) {
         if (null == client) {
             client = new OkHttpClient.Builder()
-                    .authenticator(new OPApiBasicAuthenticator("apikey", apiKey))
                     .build();
         }
         return client;
+    }
+
+    private ObjectMapper getMapper() {
+        if (null == mapper) {
+            mapper = new ObjectMapper();
+        }
+        return mapper;
     }
 
     @Override
@@ -64,7 +67,7 @@ public class OpenProjectRepository extends NewBaseRepositoryImpl {
         parameters.put("pageSize", "1");
         List<Map<String, OPFilterValue>> filters = new ArrayList<>();
         filters.add(OPFilterObject.from("id", OPFilterValue.of(FilterOperator.EQUALS, id)));
-        parameters.put("filters", new ObjectMapper().writeValueAsString(filters));
+        parameters.put("filters", getMapper().writeValueAsString(filters));
 
         Response response = getRequest("work_packages", parameters);
 
@@ -75,7 +78,7 @@ public class OpenProjectRepository extends NewBaseRepositoryImpl {
 
         List<OPWorkPackage> wps = HalParser.parse(body).as(OPCollectionObject.class).getEmbedded().getItemsBy("elements", OPWorkPackage.class);
         if (!wps.isEmpty()) {
-            return new OpenProjectWPTask(this, wps.getFirst());
+            return new OpenProjectWPTask(this, wps.stream().findFirst().orElse(null));
         }
         return null;
     }
@@ -86,14 +89,17 @@ public class OpenProjectRepository extends NewBaseRepositoryImpl {
         Map<String, String> parameters = new HashMap<>();
         parameters.put("offset", Integer.toString(offset));
         parameters.put("pageSize", Integer.toString(limit));
-        parameters.put("sortBy", "[[\"id\", \"asc\"]]");
+
+        List<List<String>> sorts = new ArrayList<>();
+        sorts.add(Arrays.asList("id", "asc"));
+        parameters.put("sortBy", getMapper().writeValueAsString(sorts));
 
         List<Map<String, OPFilterValue>> filters = new ArrayList<>();
         filters.add(OPFilterObject.from("assignee", OPFilterValue.of(FilterOperator.EQUALS, "me")));
         if (!withClosed) {
             filters.add(OPFilterObject.from("status", OPFilterValue.of(FilterOperator.WK_OPEN)));
         }
-        parameters.put("filters", new ObjectMapper().writeValueAsString(filters));
+        parameters.put("filters", getMapper().writeValueAsString(filters));
 
         Response response = getRequest("work_packages", parameters);
 
@@ -175,16 +181,18 @@ public class OpenProjectRepository extends NewBaseRepositoryImpl {
 
         RequestBody reqBody = null;
         if (null != body) {
-            reqBody = RequestBody.create(new ObjectMapper().writeValueAsString(body).getBytes());
+            reqBody = RequestBody.create(getMapper().writeValueAsString(body).getBytes());
         }
+
+        final String cred = Credentials.basic("apikey", getPassword());
 
         final Request req = new Request.Builder()
                 .url(url)
+                .header("Authorization", cred)
                 .method(method, reqBody)
                 .build();
 
         return getHttpClient(getPassword()).newCall(req).execute();
     }
-
 }
 
