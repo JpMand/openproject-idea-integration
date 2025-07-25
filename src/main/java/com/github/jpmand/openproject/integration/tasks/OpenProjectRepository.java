@@ -23,7 +23,9 @@ import java.util.*;
 @Tag("OpenProject")
 public class OpenProjectRepository extends NewBaseRepositoryImpl {
     private static final Logger LOG = Logger.getInstance(OpenProjectRepository.class);
+
     private OkHttpClient client = null;
+
     private ObjectMapper mapper = new ObjectMapper();
 
     public OpenProjectRepository() {
@@ -40,11 +42,13 @@ public class OpenProjectRepository extends NewBaseRepositoryImpl {
         setUrl(other.getUrl());
     }
 
-    private OkHttpClient getHttpClient(String apiKey) {
+    private OkHttpClient getHttpClient() {
+
         if (null == client) {
             client = new OkHttpClient.Builder()
                     .build();
         }
+
         return client;
     }
 
@@ -192,7 +196,7 @@ public class OpenProjectRepository extends NewBaseRepositoryImpl {
                 .method(method, reqBody)
                 .build();
 
-        return getHttpClient(getPassword()).newCall(req).execute();
+        return getHttpClient().newCall(req).execute();
     }
 }
 
