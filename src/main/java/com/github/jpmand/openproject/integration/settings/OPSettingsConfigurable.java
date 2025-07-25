@@ -1,5 +1,6 @@
 package com.github.jpmand.openproject.integration.settings;
 
+import com.github.jpmand.openproject.integration.util.OPBundle;
 import com.intellij.credentialStore.CredentialAttributes;
 import com.intellij.credentialStore.CredentialAttributesKt;
 import com.intellij.credentialStore.Credentials;
@@ -12,12 +13,12 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import java.util.Objects;
 
-public class OPSettingsConfigurable implements Configurable {
+    public class OPSettingsConfigurable implements Configurable {
     private OPSettingsComponent settingsComponent;
 
     @Override
     public @NlsContexts.ConfigurableName String getDisplayName() {
-        return "OpenProject Integration Settings";
+        return OPBundle.message("title.settings.window");
     }
 
     @Override

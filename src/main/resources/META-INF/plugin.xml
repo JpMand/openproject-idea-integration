@@ -18,11 +18,8 @@
                 id="com.github.jpmand.openproject.integration.settings.OPSettingsConfigurable"
                 parentId="tools"
                 instance="com.github.jpmand.openproject.integration.settings.OPSettingsConfigurable"
-                displayName="OpenProject Settings"
         />
         <applicationService serviceImplementation="com.github.jpmand.openproject.integration.settings.OPSettings"/>
-
-        <tasks.repositoryType implementation="com.github.jpmand.openproject.integration.tasks.OpenProjectRepositoryType"/>
-
+        <tasks.repositoryType implementation="com.intellij.tasks.openproject.OpenProjectRepositoryType"/>
     </extensions>
 </idea-plugin>
