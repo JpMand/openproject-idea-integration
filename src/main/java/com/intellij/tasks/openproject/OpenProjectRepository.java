@@ -9,8 +9,6 @@ import com.github.jpmand.openproject.integration.api.models.filters.OPFilterObje
 import com.github.jpmand.openproject.integration.api.models.filters.OPFilterValue;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.tasks.CustomTaskState;
-import com.intellij.tasks.Task;
 import com.intellij.tasks.impl.BaseRepository;
 import com.intellij.tasks.impl.httpclient.NewBaseRepositoryImpl;
 import com.intellij.util.xmlb.annotations.Attribute;
@@ -22,7 +20,8 @@ import java.util.*;
 
 @Tag("OpenProject")
 public class OpenProjectRepository extends NewBaseRepositoryImpl {
-    private static final Logger LOG = Logger.getInstance(OpenProjectRepository.class);
+
+    private static final Logger logger = Logger.getInstance(OpenProjectRepository.class);
 
     private OPApiClient client = null;
 
@@ -70,16 +69,22 @@ public class OpenProjectRepository extends NewBaseRepositoryImpl {
 
     @Override
     public OpenProjectWPTask[] getIssues(@Nullable String query, int offset, int limit, boolean withClosed) throws Exception {
+        logger.info(String.format("[getIssues] Retrieving issues. Query: %s. offset: %s. limit: %s. withClosed: %s", query, offset, limit, withClosed));
         List<List<String>> sorts = new ArrayList<>();
         sorts.add(Arrays.asList("id", SortEnum.ASC.toString()));
 
         List<Map<String, OPFilterValue>> filters = new ArrayList<>();
-        filters.add(OPFilterObject.from("assignee", OPFilterValue.of(FilterOperator.EQUALS, "me")));
+        if(StringUtil.isNotEmpty(query)){
+            filters.add(OPFilterObject.from("subject_or_id", OPFilterValue.of(FilterOperator.SEARCH_BY_STRING, query)));
+        }else{
+            filters.add(OPFilterObject.from("assignee", OPFilterValue.of(FilterOperator.EQUALS, "me")));
+        }
         if (!withClosed) {
             filters.add(OPFilterObject.from("status", OPFilterValue.of(FilterOperator.WK_OPEN)));
         }
 
         AbstractOPCollection<OPWorkPackageModel> workpackages = getOPApiClient().getWorkPackages(offset, limit, sorts, filters);
+        logger.info(String.format("[getIssues] Retrieved collection: %s", workpackages.toString()));
         return workpackages.getElements().stream().map(wp -> new OpenProjectWPTask(this, wp)).toArray(OpenProjectWPTask[]::new);
     }
 
@@ -95,8 +100,7 @@ public class OpenProjectRepository extends NewBaseRepositoryImpl {
 
     @Override
     protected int getFeatures() {
-        //TODO CHECK FEATURES
-        return NATIVE_SEARCH | STATE_UPDATING | TIME_MANAGEMENT;
+        return NATIVE_SEARCH;
     }
 
     @Override
@@ -112,18 +116,6 @@ public class OpenProjectRepository extends NewBaseRepositoryImpl {
                 //do nothing
             }
         };
-    }
-
-    @Override
-    public @NotNull Set<CustomTaskState> getAvailableTaskStates(@NotNull Task task) throws Exception {
-        //TODO GET CURR PROJECT AVAILABLE TASK STATES
-        return super.getAvailableTaskStates(task);
-    }
-
-    @Override
-    public void setTaskState(@NotNull Task task, @NotNull CustomTaskState state) throws Exception {
-
-        super.setTaskState(task, state);
     }
 
     @Override

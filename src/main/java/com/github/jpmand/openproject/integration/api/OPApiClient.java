@@ -67,6 +67,19 @@ public class OPApiClient {
         }
     }
 
+    public OPBaseResource getConfiguration(){
+        Request request = new Request.Builder().url(baseUrl).build();
+        try (Response response = client.newCall(request).execute()) {
+            if (response.isSuccessful()) {
+                return mapper.readValue(response.body().bytes(), OPBaseResource.class);
+            } else {
+                return null;
+            }
+        } catch (IOException | IllegalStateException ex) {
+            return null;
+        }
+    }
+
     public OPWorkPackageModel getWorkPackageById(Integer id) {
         HttpUrl url = getBaseHttpUrl(baseUrl).newBuilder()
                 .addPathSegment("work_packages")

@@ -22,7 +22,7 @@ public class OPBaseResource {
 
     @JsonAnySetter
     @JsonAnyGetter
-    private Map<String, Object> unmappedProperties;
+    private Map<String, Object> properties;
 
     public OPBaseResource() {
     }
@@ -48,12 +48,12 @@ public class OPBaseResource {
         this.links = _links;
     }
 
-    public Map<String, Object> getUnmappedProperties() {
-        return unmappedProperties;
+    public Map<String, Object> getProperties() {
+        return properties;
     }
 
-    public void setUnmappedProperties(Map<String, Object> unmappedProperties) {
-        this.unmappedProperties = unmappedProperties;
+    public void setProperties(Map<String, Object> properties) {
+        this.properties = properties;
     }
 
     public List<OPBaseLink> getLink(String rel) {

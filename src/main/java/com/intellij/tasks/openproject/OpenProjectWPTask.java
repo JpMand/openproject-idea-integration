@@ -84,7 +84,7 @@ public class OpenProjectWPTask extends Task {
 
     @Override
     public @Nullable String getIssueUrl() {
-        return repository.getUrl().concat(opWPObject.getLink(OPBaseResource.SELF_LINK).getFirst().getHref());
+        return repository.getUrl().concat(repository.getUrl().endsWith("/")? "wp" : "/wp").concat("/").concat(opWPObject.getId().toString());
     }
 
     @Override
