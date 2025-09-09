@@ -4,3 +4,7 @@
 .qodana
 build
 out
+*.iml
+target
+.DS_Store
+.kotlin
