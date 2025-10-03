@@ -104,7 +104,14 @@ intellijPlatform {
 
     pluginVerification {
         ides {
-            recommended()
+            //Copied from https://github.com/JetBrains/intellij-platform-plugin-template/issues/462#issuecomment-2745197887
+            //Use only `since` and `latest` version to verify
+            //This should limit the number of versions download and avoid size limit error on plugin verify in the GitHub action
+            val productReleases = ProductReleasesValueSource().get()
+            val reducedProductReleases =
+                if (productReleases.size > 2) listOf(productReleases.first(), productReleases.last())
+                else productReleases
+            ides(reducedProductReleases)
         }
     }
 }
