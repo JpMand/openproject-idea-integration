@@ -136,6 +136,9 @@ class WorkPackageListPanel(
     private var columnsDirty = false
     private var syncing = false
     private var savedViewsLoaded = false
+
+    /** The server's saved queries; the views dropdown shows those of the selected project (see [showSavedViews]). */
+    private var savedQueries: List<Query> = emptyList()
     private var lastPage: WorkPackagePage? = null
     @Volatile private var pageSizes: List<Int> = listOf(20, 50, 100)
 
@@ -358,16 +361,26 @@ class WorkPackageListPanel(
         savedViewsLoaded = true
         cs.launch {
             val queries = runCatching { connection.api.queries() }.getOrNull() ?: return@launch
-            val items = listOf(defaultView()) + queries.filter { it.id != null && !it.hidden }
-                .sortedWith(compareByDescending<Query> { it.starred }.thenBy { it.name?.lowercase() })
-                .map { SavedView(it.id!!, (if (it.starred) "★ " else "") + it.name.orEmpty()) }
             withContext(Dispatchers.EDT) {
+                savedQueries = queries
                 syncing = true
-                viewsCombo.model = DefaultComboBoxModel(items.toTypedArray())
-                viewsCombo.selectedItem = items.firstOrNull { it.id == viewState.value.savedQueryId } ?: items.first()
-                syncing = false
+                try {
+                    showSavedViews(viewState.value)
+                } finally {
+                    syncing = false
+                }
             }
         }
+    }
+
+    /** Fills the views dropdown with the saved queries of the list's project (or the global ones) and selects the applied one. */
+    private fun showSavedViews(state: ListViewState) {
+        val items = listOf(defaultView()) + ListQueries.savedViews(savedQueries, ListQueries.selectedProjects(state), state.savedQueryId)
+            .map { SavedView(it.id!!, (if (it.starred) "★ " else "") + it.name.orEmpty()) }
+        val model = viewsCombo.model
+        if ((0 until model.size).map(model::getElementAt) != items) viewsCombo.model = DefaultComboBoxModel(items.toTypedArray())
+        val selected = items.firstOrNull { it.id == state.savedQueryId } ?: items.first()
+        if (viewsCombo.selectedItem != selected) viewsCombo.selectedItem = selected
     }
 
     private fun applySavedView(view: SavedView) {
@@ -482,7 +495,7 @@ class WorkPackageListPanel(
         try {
             if (searchField.text != state.search && !searchField.textEditor.hasFocus()) searchField.text = state.search
             quickFilters.forEach { it.show(state.filters) }
-            if (state.savedQueryId == 0L && (viewsCombo.selectedItem as? SavedView)?.id != 0L) viewsCombo.selectedIndex = 0
+            showSavedViews(state)
             filterBar.setFilters(state.filters)
         } finally {
             syncing = false
@@ -737,6 +750,9 @@ class WorkPackageListPanel(
 
     @TestOnly
     internal fun viewState(): ListViewState = viewState.value
+
+    @TestOnly
+    internal fun savedViewNames(): List<String> = (0 until viewsCombo.model.size).map { viewsCombo.model.getElementAt(it).name }
 
     @TestOnly
     internal fun updateViewState(transform: (ListViewState) -> ListViewState) = viewState.update(transform)

@@ -4,6 +4,7 @@ import com.github.jpmand.openproject.idea.api.FilterSpec
 import com.github.jpmand.openproject.idea.api.Filters
 import com.github.jpmand.openproject.idea.api.SortSpec
 import com.github.jpmand.openproject.idea.api.WorkPackageQuery
+import com.github.jpmand.openproject.idea.api.model.Query
 
 /** What the work package table shows: columns, sorting, filters, search and paging. */
 data class ListViewState(
@@ -101,6 +102,22 @@ object ListQueries {
     /** Back to [defaults], keeping the column layout and page size. */
     fun reset(state: ListViewState, defaults: ListViewState): ListViewState =
         defaults.copy(columns = state.columns, widths = state.widths, pageSize = state.pageSize)
+
+    /** The projects the list is filtered to (the "project is" filter); empty when it shows all projects. */
+    fun selectedProjects(state: ListViewState): Set<Long> =
+        state.filters.firstOrNull { it.name == "project" && it.operator == "=" }?.values.orEmpty().mapNotNull(String::toLongOrNull).toSet()
+
+    /**
+     * The saved queries the views dropdown offers: those of the selected [projects], or, when the list shows all
+     * projects, those that belong to no project; hidden queries never. The applied query ([appliedId]) stays in any
+     * case, so that the dropdown can show it. Starred queries first, then by name.
+     */
+    fun savedViews(queries: List<Query>, projects: Set<Long>, appliedId: Long): List<Query> =
+        queries.filter { query ->
+            val id = query.id ?: return@filter false
+            val project = query.links["project"]?.id?.toLongOrNull()
+            id == appliedId || !query.hidden && (if (projects.isEmpty()) project == null else project in projects)
+        }.sortedWith(compareByDescending<Query> { it.starred }.thenBy { it.name?.lowercase() })
 
     /** Adds the default project filter to filters that have none (saved queries, older views). */
     fun withDefaultProject(filters: List<FilterSpec>, projectId: Long): List<FilterSpec> =

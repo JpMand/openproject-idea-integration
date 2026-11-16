@@ -19,7 +19,14 @@ import com.intellij.tasks.TaskRepositoryType
 import com.intellij.tasks.impl.TaskManagerImpl
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import io.ktor.http.HttpMethod
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 
 /** The work package table against a real OpenProject: search, filters, sorting, paging and columns. */
 class ListPanelIntegrationTest : BasePlatformTestCase() {
@@ -122,6 +129,44 @@ class ListPanelIntegrationTest : BasePlatformTestCase() {
 
         // the view is remembered for the next time the list is shown
         assertEquals(2, WorkPackageListViews.getInstance(project).get(serverId).pageSize)
+    }
+
+    fun `test views follow the selected project`() = runBlocking {
+        val api = OpenProjectIntegration.newApi()
+        val queries = mutableListOf<Long>()
+        try {
+            val demo = OpenProjectIntegration.demoProject(api).first.id
+            suspend fun create(name: String, project: Long?): Long {
+                val id = api.send<JsonObject>(HttpMethod.Post, api.apiUrl("queries"), buildJsonObject {
+                    put("name", name)
+                    putJsonObject("_links") { putJsonObject("project") { put("href", project?.let { "/api/v3/projects/$it" }) } }
+                }).getValue("id").jsonPrimitive.long.also(queries::add)
+                // A query is hidden (no saved view, as OpenProject calls it) until a view shows it.
+                api.send<JsonObject>(HttpMethod.Post, api.apiUrl("views/work_packages_table"), buildJsonObject {
+                    putJsonObject("_links") { putJsonObject("query") { put("href", "/api/v3/queries/$id") } }
+                })
+                return id
+            }
+            create(PREFIX + "global", null)
+            create(PREFIX + "demo", demo)
+            create(PREFIX + "other", otherProjectId)
+            val reloaded = WorkPackageListPanel(project, serverId, null)
+            try {
+                fun names() = reloaded.savedViewNames().filter { it.startsWith(PREFIX) }
+                PlatformTestUtil.waitWithEventsDispatching("views", { names().isNotEmpty() }, 60)
+                // all projects: the views of no project
+                assertEquals(listOf(PREFIX + "global"), names())
+                reloaded.updateViewState { ListQueries.withQuickFilter(it, "project", Filters.project(demo)) }
+                PlatformTestUtil.waitWithEventsDispatching("project views", { names() == listOf(PREFIX + "demo") }, 30)
+                reloaded.updateViewState { ListQueries.withQuickFilter(it, "project", Filters.project(otherProjectId)) }
+                PlatformTestUtil.waitWithEventsDispatching("other project views", { names() == listOf(PREFIX + "other") }, 30)
+            } finally {
+                Disposer.dispose(reloaded)
+            }
+        } finally {
+            queries.forEach { id -> runCatching { api.execute(HttpMethod.Delete, api.apiUrl("queries/$id")) } }
+            api.close()
+        }
     }
 
     private companion object {

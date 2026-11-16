@@ -7,6 +7,7 @@
 - Work package lists and work packages open in the new OpenProject tool window (bottom) instead of editor tabs: a row click previews the work package next to the list, "Open in New Tab" opens it in a tab (properties left, activity/relations/files right), "Open as New Tab" and "+" open more lists
 - Quick filter dropdowns (project, type, status, priority, assignee) above the list
 - New lists, "Reset" and saved queries without a project filter use the project configured for the task server
+- The views dropdown lists the saved views of the selected project(s); with "All projects", only views that belong to no project. The applied view stays listed
 - Removed the "Work Packages…" action (the tool window replaces it)
 - "% Complete" and "Total % complete" columns show a progress bar behind the value, and 0% when the work package has none
 - "Spent time" cells turn red when more time was spent than the work (possible overtime); the tooltip shows both

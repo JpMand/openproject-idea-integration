@@ -3,6 +3,9 @@ package com.github.jpmand.openproject.idea.ui
 import com.github.jpmand.openproject.idea.api.FilterSpec
 import com.github.jpmand.openproject.idea.api.Filters
 import com.github.jpmand.openproject.idea.api.SortSpec
+import com.github.jpmand.openproject.idea.api.hal.HalLink
+import com.github.jpmand.openproject.idea.api.hal.HalLinks
+import com.github.jpmand.openproject.idea.api.model.Query
 import com.github.jpmand.openproject.idea.ui.list.ListQueries
 import com.github.jpmand.openproject.idea.ui.list.ListViewState
 import com.github.jpmand.openproject.idea.ui.list.QuickFilterDef
@@ -119,5 +122,37 @@ class ListQueriesTest {
         assertEquals("Any", QuickFilterDef.TYPE.selected(emptyList())?.title)
         assertEquals(null, QuickFilterDef.TYPE.selected(listOf(bug)))
         assertEquals("Unassigned", QuickFilterDef.ASSIGNEE.selected(listOf(FilterSpec("assignee", "!*")))?.title)
+    }
+
+    private fun query(id: Long, name: String, project: Long?, starred: Boolean = false, hidden: Boolean = false) = Query(
+        id = id, name = name, starred = starred, hidden = hidden,
+        links = HalLinks(mapOf("project" to listOf(HalLink(href = project?.let { "/api/v3/projects/$it" })))),
+    )
+
+    @Test
+    fun `views follow the selected project`() {
+        val queries = listOf(
+            query(1, "All open", project = null),
+            query(2, "Bugs of demo", project = 7),
+            query(3, "Milestones", project = 7, starred = true),
+            query(4, "Scrum board", project = 8),
+            query(5, "Internal", project = null, hidden = true),
+            Query(id = 6, name = "Global without project link"),
+        )
+        fun names(state: ListViewState) = ListQueries.savedViews(queries, ListQueries.selectedProjects(state), state.savedQueryId).map { it.name }
+
+        // all projects: only views that belong to no project
+        assertEquals(listOf("All open", "Global without project link"), names(initial))
+        // one project: its views, starred first
+        val demo = ListQueries.withQuickFilter(initial, "project", Filters.project(7))
+        assertEquals(setOf(7L), ListQueries.selectedProjects(demo))
+        assertEquals(listOf("Milestones", "Bugs of demo"), names(demo))
+        // several projects: the views of each
+        val both = ListQueries.withQuickFilter(initial, "project", FilterSpec("project", "=", listOf("7", "8")))
+        assertEquals(listOf("Milestones", "Bugs of demo", "Scrum board"), names(both))
+        // the applied view stays, even when it belongs to no selected project
+        assertEquals(listOf("Milestones", "All open", "Bugs of demo"), names(demo.copy(savedQueryId = 1)))
+        // other project operators do not select projects
+        assertTrue(ListQueries.selectedProjects(initial.copy(filters = listOf(FilterSpec("project", "!", listOf("7"))))).isEmpty())
     }
 }
