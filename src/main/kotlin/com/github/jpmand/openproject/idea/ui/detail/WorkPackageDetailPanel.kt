@@ -11,8 +11,10 @@ import com.github.jpmand.openproject.idea.core.describeError
 import com.github.jpmand.openproject.idea.ui.OpenProjectDataKeys
 import com.github.jpmand.openproject.idea.ui.common.HtmlView
 import com.github.jpmand.openproject.idea.ui.common.MarkdownField
+import com.github.jpmand.openproject.idea.ui.common.ScrollableColumnPanel
 import com.github.jpmand.openproject.idea.ui.common.StatusBadge
 import com.github.jpmand.openproject.idea.ui.common.StatusPanel
+import com.github.jpmand.openproject.idea.ui.common.TitleLayout
 import com.github.jpmand.openproject.idea.ui.common.swatchListRenderer
 import com.github.jpmand.openproject.idea.ui.list.WorkPackageCells
 import com.github.jpmand.openproject.idea.ui.toolwindow.OpenProjectToolWindowManager
@@ -46,6 +48,7 @@ import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTabbedPane
+import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
@@ -64,7 +67,6 @@ import java.awt.Color
 import java.awt.Dimension
 import java.awt.Cursor
 import java.awt.FlowLayout
-import java.awt.Rectangle
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
@@ -73,12 +75,9 @@ import java.io.File
 import java.net.URLConnection
 import java.util.concurrent.ConcurrentHashMap
 import javax.swing.Box
-import javax.swing.BoxLayout
 import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JPanel
-import javax.swing.JViewport
-import javax.swing.Scrollable
 import javax.swing.SwingConstants
 import javax.swing.SwingUtilities
 
@@ -117,10 +116,16 @@ class WorkPackageDetailPanel(
     // header: hierarchy, then type, id and subject, then status, author and last update
     private val hierarchyRow = JPanel(WrapLayout(FlowLayout.LEFT, 0, 0)).apply { isOpaque = false }
     private val idLabel = JBLabel().apply { font = JBFont.h2(); foreground = UIUtil.getContextHelpForeground() }
-    private val subjectLabel = JBLabel().apply { font = JBFont.h2().asBold(); border = JBUI.Borders.emptyRight(6) }
+    private val subjectText = SubjectText()
     private val subjectEdit = InplaceButton(OpenProjectBundle.message("detail.subject.edit"), AllIcons.Actions.Edit) { editSubject() }
-    private val subjectRow = JPanel(WrapLayout(FlowLayout.LEFT, 0, 0)).apply { isOpaque = false }
+    private val subjectRow = JPanel(TitleLayout()).apply { isOpaque = false }
     private val typeBadge = dropDownBadge("type") { chooseType(it) }
+    private val typeAndId = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
+        isOpaque = false
+        add(typeBadge)
+        add(Box.createRigidArea(Dimension(JBUI.scale(8), 0)))
+        add(idLabel)
+    }
     private val statusBadge = dropDownBadge("status") { chooseStatus(it) }
     private val createdLabel = JBLabel().apply { foreground = UIUtil.getContextHelpForeground() }
     private val updatedLabel = JBLabel().apply { foreground = UIUtil.getContextHelpForeground() }
@@ -239,8 +244,8 @@ class WorkPackageDetailPanel(
     }
 
     private fun page(): JComponent {
-        val main = JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        // Each row is measured at the page width, so rows that wrap in a narrow page keep their full height.
+        val main = ScrollableColumnPanel().apply {
             border = JBUI.Borders.empty(10, 14)
             add(hierarchyRow)
             add(subjectRow.apply { border = JBUI.Borders.emptyTop(4) })
@@ -252,10 +257,8 @@ class WorkPackageDetailPanel(
             add(descriptionPanel)
             add(properties.apply { border = JBUI.Borders.emptyTop(14) })
         }
-        main.components.forEach { (it as? JComponent)?.alignmentX = 0f }
-        // Top-aligned: the column keeps its height instead of spreading over the visible area. As wide as the visible
-        // area, so that rows wrap and the properties take fewer columns when the page gets narrower.
-        val left = JBScrollPane(ViewportWidthPanel().apply { add(main, BorderLayout.NORTH) }).apply { border = JBUI.Borders.empty() }
+        // As wide as the visible area, so that rows wrap and the properties take fewer columns when the page gets narrower.
+        val left = JBScrollPane(main).apply { border = JBUI.Borders.empty() }
         return when (layout) {
             Layout.PREVIEW -> OnePixelSplitter(true, "OpenProject.Preview.Split", 0.55f).apply {
                 firstComponent = left
@@ -303,15 +306,13 @@ class WorkPackageDetailPanel(
         hierarchyRow.revalidate()
     }
 
-    /** Type badge, id and the subject (or [subjectEditor] while the subject is edited). */
+    /** Type badge and id, then the subject (or [subjectEditor] while the subject is edited), which wraps when long. */
     private fun showSubject(workPackage: WorkPackage, subjectEditor: JComponent? = null) {
         subjectRow.removeAll()
-        subjectLabel.text = workPackage.subject
-        listOf(typeBadge, idLabel, subjectEditor ?: subjectLabel).forEach {
-            subjectRow.add(it)
-            subjectRow.add(Box.createRigidArea(Dimension(JBUI.scale(8), 0)))
-        }
-        if (subjectEditor == null && controller.details.value?.canEdit == true) subjectRow.add(subjectEdit)
+        subjectText.text = workPackage.subject
+        subjectRow.add(typeAndId, TitleLayout.LEADING)
+        subjectRow.add(subjectEditor ?: subjectText, TitleLayout.TEXT)
+        if (subjectEditor == null && controller.details.value?.canEdit == true) subjectRow.add(subjectEdit, TitleLayout.TRAILING)
         subjectRow.revalidate()
         subjectRow.repaint()
     }
@@ -641,18 +642,27 @@ class WorkPackageDetailPanel(
         return toolbar.component.apply { border = JBUI.Borders.customLineBottom(JBColor.border()) }
     }
 
-    /** A scroll pane view that always has the width of the viewport (it scrolls vertically only). */
-    private class ViewportWidthPanel : JPanel(BorderLayout()), Scrollable {
-        override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
+    /** The subject: bold heading text that wraps onto more lines when long, and can be selected and copied. */
+    private class SubjectText : JBTextArea() {
+        init {
+            isEditable = false
+            lineWrap = true
+            wrapStyleWord = true
+            applyStyle()
+        }
 
-        override fun getScrollableUnitIncrement(visibleRect: Rectangle, orientation: Int, direction: Int): Int = JBUI.scale(16)
+        /** Theme changes reset font, colors and opacity to those of text areas. */
+        override fun updateUI() {
+            super.updateUI()
+            applyStyle()
+        }
 
-        override fun getScrollableBlockIncrement(visibleRect: Rectangle, orientation: Int, direction: Int): Int =
-            if (orientation == SwingConstants.VERTICAL) visibleRect.height else visibleRect.width
-
-        override fun getScrollableTracksViewportWidth(): Boolean = true
-
-        override fun getScrollableTracksViewportHeight(): Boolean = (parent as? JViewport)?.let { it.height > preferredSize.height } ?: false
+        private fun applyStyle() {
+            isOpaque = false
+            border = JBUI.Borders.empty()
+            font = JBFont.h2().asBold()
+            foreground = UIUtil.getLabelForeground()
+        }
     }
 
     @TestOnly

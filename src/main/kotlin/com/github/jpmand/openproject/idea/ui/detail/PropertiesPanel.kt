@@ -1,6 +1,7 @@
 package com.github.jpmand.openproject.idea.ui.detail
 
 import com.github.jpmand.openproject.idea.OpenProjectBundle
+import com.github.jpmand.openproject.idea.ui.common.ColumnLayout
 import com.github.jpmand.openproject.idea.ui.common.DatePicker
 import com.github.jpmand.openproject.idea.ui.common.ResponsiveGridLayout
 import com.github.jpmand.openproject.idea.ui.list.Labels
@@ -23,7 +24,6 @@ import java.awt.event.FocusAdapter
 import java.awt.event.FocusEvent
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
-import javax.swing.BoxLayout
 import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.text.JTextComponent
@@ -46,7 +46,8 @@ class PropertiesPanel(
     private var editing = false
 
     init {
-        layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        // Groups measured at the panel's width: their column count, and so their height, depends on it.
+        layout = ColumnLayout()
         isOpaque = false
         border = JBUI.Borders.empty(12)
     }
@@ -68,7 +69,6 @@ class PropertiesPanel(
                 group.attributes.forEach { attribute -> add(cell(details, attribute)) }
             })
         }
-        components.forEach { (it as? JComponent)?.alignmentX = 0f }
         revalidate()
         repaint()
     }

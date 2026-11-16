@@ -21,6 +21,7 @@
 - Supports IntelliJ IDEA 2026.1 and later (no until-build); the Plugin Verifier checks the latest 2026.1, 2026.2 and 2026.3 releases
 
 ### Fixed
+- The work package page no longer paints the status line over a title that wraps (narrow preview): its rows get their wrapped height in the first layout pass, and a long subject wraps onto more lines instead of being cut off
 - Close Task with a status update no longer fails ("forbidden on EDT"): the status is set in the background under a modal progress, and failures are logged and shown by the Tasks plugin
 - Close Task is confirmed with a notification (and a log entry) naming the work package and its new status; before, closing without a status update looked like nothing happened
 
