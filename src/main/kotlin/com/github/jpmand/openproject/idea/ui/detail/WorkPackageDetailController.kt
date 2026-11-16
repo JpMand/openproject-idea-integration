@@ -198,6 +198,10 @@ class WorkPackageDetailController(private val project: Project, private val serv
         loadUnlocked()
     }
 
+    /** An attachment by id: one of this work package's, or else loaded from the server (e.g. linked in a comment). */
+    suspend fun attachment(id: Long): Attachment =
+        current().attachments.firstOrNull { it.id == id } ?: connection().api.attachment(id)
+
     suspend fun download(attachment: Attachment, sink: OutputStream) {
         val href = attachment.links.href("downloadLocation") ?: attachment.links.href("staticDownloadLocation") ?: error("No download link")
         connection().api.download(href, sink)

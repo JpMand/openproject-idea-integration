@@ -43,10 +43,12 @@ class ActivityPanel(
             border = JBUI.Borders.emptyTop(12)
             add(JBLabel(OpenProjectBundle.message("detail.comment.title")).apply { border = JBUI.Borders.emptyBottom(4) }, BorderLayout.NORTH)
             add(composer, BorderLayout.CENTER)
-            add(JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(8), 0)).apply {
+            // No horizontal gap before the button: it lines up with the comment box.
+            add(JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
                 isOpaque = false
-                add(internalBox)
+                border = JBUI.Borders.emptyTop(6)
                 add(submit)
+                add(internalBox.apply { border = JBUI.Borders.emptyLeft(12) })
             }, BorderLayout.SOUTH)
         }, BorderLayout.SOUTH)
         submit.addActionListener {

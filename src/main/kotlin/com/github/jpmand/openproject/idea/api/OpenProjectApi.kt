@@ -260,6 +260,8 @@ class OpenProjectApi(private val http: HttpClient, baseUrl: String) : AutoClosea
         return get<HalCollection<Attachment>>(resolve(href)).elements
     }
 
+    suspend fun attachment(id: Long): Attachment = get(apiUrl("attachments/$id"))
+
     /** Uploads via the `addAttachment` link (multipart: a `metadata` JSON part and a `file` part). */
     suspend fun uploadAttachment(
         workPackage: WorkPackage,

@@ -10,10 +10,12 @@ import javax.swing.event.HyperlinkEvent
 
 /**
  * Read-only view of server-rendered HTML (descriptions, comments, activity details). Links to work packages of
- * the same server are handed to [openWorkPackage]; everything else opens in the browser.
+ * the same server are handed to [openWorkPackage], links to its attachments to [openAttachment]; everything else
+ * opens in the browser.
  */
 class HtmlView(
     private val baseUrl: () -> String?,
+    private val openAttachment: ((Long) -> Unit)? = null,
     private val openWorkPackage: (Long) -> Unit,
 ) : JEditorPane() {
 
@@ -43,6 +45,7 @@ class HtmlView(
             else -> href
         }
         workPackageId(absolute, base)?.let { return openWorkPackage(it) }
+        openAttachment?.let { open -> attachmentId(absolute, base)?.let { return open(it) } }
         BrowserUtil.browse(absolute)
     }
 
@@ -52,6 +55,14 @@ class HtmlView(
             "p { margin-top: 2px; margin-bottom: 6px; } pre, code { font-family: monospace; }"
 
         private val workPackageLink = Regex("""/work_packages/(\d+)(?:[/?#].*)?$""")
+
+        /** API (`/api/v3/attachments/12/content`) and web (`/attachments/12/notes.txt`) links of an attachment. */
+        private val attachmentLink = Regex("""^(?:/api/v3)?/attachments/(\d+)(?:[/?#].*)?$""")
+
+        fun attachmentId(url: String, baseUrl: String?): Long? {
+            if (baseUrl == null || !url.startsWith(baseUrl)) return null
+            return attachmentLink.find(url.removePrefix(baseUrl))?.groupValues?.get(1)?.toLongOrNull()
+        }
 
         fun workPackageId(url: String, baseUrl: String?): Long? {
             if (baseUrl == null || !url.startsWith(baseUrl)) return null

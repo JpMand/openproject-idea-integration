@@ -546,13 +546,21 @@ class WorkPackageDetailPanel(
     }
 
     private fun openAttachment(attachment: Attachment) {
-        perform {
-            val directory = FileUtil.createTempDirectory("openproject-attachment", null, true)
-            val target = File(directory, attachment.fileName.replace(Regex("[\\\\/:]"), "_"))
-            target.outputStream().use { controller.download(attachment, it) }
-            withContext(Dispatchers.EDT) {
-                LocalFileSystem.getInstance().refreshAndFindFileByIoFile(target)?.let { OpenFileDescriptor(project, it).navigate(true) }
-            }
+        perform { openInEditor(attachment) }
+    }
+
+    /** A link to an attachment (e.g. "File notes.txt added" in the activity) opens it like "Open" in the Files tab. */
+    private fun openAttachment(id: Long) {
+        perform { openInEditor(controller.attachment(id)) }
+    }
+
+    /** Downloads [attachment] into a temporary directory and opens it in an editor. */
+    private suspend fun openInEditor(attachment: Attachment) {
+        val directory = FileUtil.createTempDirectory("openproject-attachment", null, true)
+        val target = File(directory, attachment.fileName.replace(Regex("[\\\\/:]"), "_"))
+        target.outputStream().use { controller.download(attachment, it) }
+        withContext(Dispatchers.EDT) {
+            LocalFileSystem.getInstance().refreshAndFindFileByIoFile(target)?.let { OpenFileDescriptor(project, it).navigate(true) }
         }
     }
 
@@ -587,7 +595,7 @@ class WorkPackageDetailPanel(
         notification.notify(project)
     }
 
-    private fun html(): HtmlView = HtmlView({ controller.details.value?.server?.id }) { id ->
+    private fun html(): HtmlView = HtmlView({ controller.details.value?.server?.id }, ::openAttachment) { id ->
         OpenProjectToolWindowManager.getInstance(project).openWorkPackage(serverId, id)
     }
 

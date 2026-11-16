@@ -80,4 +80,14 @@ class WorkPackageCellsTest {
         assertNull(HtmlView.workPackageId("https://other.example.com/work_packages/12", "https://op.example.com"))
         assertNull(HtmlView.workPackageId("https://op.example.com/projects/demo", "https://op.example.com"))
     }
+
+    @Test
+    fun `links to attachments of the same server are recognized`() {
+        // activity: "File notes.txt added as attachment"
+        assertEquals(6L, HtmlView.attachmentId("http://localhost:8080/api/v3/attachments/6/content", "http://localhost:8080"))
+        assertEquals(6L, HtmlView.attachmentId("https://example.com/op/attachments/6/notes.txt", "https://example.com/op"))
+        assertNull(HtmlView.attachmentId("https://other.example.com/api/v3/attachments/6/content", "https://op.example.com"))
+        assertNull(HtmlView.attachmentId("https://op.example.com/work_packages/6", "https://op.example.com"))
+        assertNull(HtmlView.workPackageId("https://op.example.com/api/v3/attachments/6/content", "https://op.example.com"))
+    }
 }

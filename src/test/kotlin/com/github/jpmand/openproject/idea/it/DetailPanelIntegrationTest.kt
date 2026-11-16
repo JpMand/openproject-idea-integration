@@ -5,21 +5,25 @@ import com.github.jpmand.openproject.idea.api.model.WorkPackage
 import com.github.jpmand.openproject.idea.core.OpenProjectServers
 import com.github.jpmand.openproject.idea.tasks.OpenProjectRepository
 import com.github.jpmand.openproject.idea.tasks.OpenProjectRepositoryType
+import com.github.jpmand.openproject.idea.ui.common.HtmlView
 import com.github.jpmand.openproject.idea.ui.detail.ConcurrentChangeException
 import com.github.jpmand.openproject.idea.ui.detail.EditorKind
 import com.github.jpmand.openproject.idea.ui.detail.PropertyEditing
 import com.github.jpmand.openproject.idea.ui.detail.RelationsPanel
 import com.github.jpmand.openproject.idea.ui.detail.WorkPackageDetailPanel
 import com.github.jpmand.openproject.idea.ui.detail.WorkPackageHierarchy
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.util.Disposer
 import com.intellij.tasks.TaskManager
 import com.intellij.tasks.TaskRepositoryType
 import com.intellij.tasks.impl.TaskManagerImpl
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.intellij.util.ui.UIUtil
 import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayOutputStream
 import java.time.LocalDate
+import javax.swing.event.HyperlinkEvent
 
 /** The work package page against a real OpenProject: every edit it offers. */
 class DetailPanelIntegrationTest : BasePlatformTestCase() {
@@ -157,6 +161,21 @@ class DetailPanelIntegrationTest : BasePlatformTestCase() {
         assertEquals(listOf(parent.id, workPackage.id), hierarchy.map { it.workPackageId })
         assertEquals("#${parent.id} ${PREFIX}parent", hierarchy.first().text)
     }
+
+    fun `test attachment links in the activity open the file in an editor`() {
+        val attachment = runBlocking { controller.upload("linked.txt", "text/plain", "linked body".toByteArray()) }
+        assertEquals(attachment.id, runBlocking { controller.attachment(attachment.id) }.id)
+        PlatformTestUtil.waitWithEventsDispatching("activity", { htmlViews().any { "linked.txt" in it.text } }, 30)
+        val view = htmlViews().first { "linked.txt" in it.text }
+        val href = Regex("""href="([^"]*attachments/${attachment.id}[^"]*)"""").find(view.text)!!.groupValues[1]
+        view.fireHyperlinkUpdate(HyperlinkEvent(view, HyperlinkEvent.EventType.ACTIVATED, null, href))
+        val editors = FileEditorManager.getInstance(project)
+        PlatformTestUtil.waitWithEventsDispatching("editor", { editors.openFiles.any { it.name == "linked.txt" } }, 30)
+        assertEquals("linked body", String(editors.openFiles.first { it.name == "linked.txt" }.contentsToByteArray()))
+        editors.openFiles.forEach(editors::closeFile)
+    }
+
+    private fun htmlViews(): List<HtmlView> = UIUtil.uiTraverser(editor).filter(HtmlView::class.java).toList()
 
     private companion object {
         const val PREFIX = "IT-detail "
