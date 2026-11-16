@@ -57,12 +57,14 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonElement
 import org.jetbrains.annotations.TestOnly
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Dimension
 import java.awt.Cursor
 import java.awt.FlowLayout
+import java.awt.Rectangle
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
@@ -75,6 +77,8 @@ import javax.swing.BoxLayout
 import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JPanel
+import javax.swing.JViewport
+import javax.swing.Scrollable
 import javax.swing.SwingConstants
 import javax.swing.SwingUtilities
 
@@ -110,21 +114,16 @@ class WorkPackageDetailPanel(
     private val status = StatusPanel()
     private val content = JPanel(BorderLayout())
 
-    // header
-    private val idLabel = JBLabel().apply { foreground = UIUtil.getContextHelpForeground() }
+    // header: hierarchy, then type, id and subject, then status, author and last update
+    private val hierarchyRow = JPanel(WrapLayout(FlowLayout.LEFT, 0, 0)).apply { isOpaque = false }
+    private val idLabel = JBLabel().apply { font = JBFont.h2(); foreground = UIUtil.getContextHelpForeground() }
     private val subjectLabel = JBLabel().apply { font = JBFont.h2().asBold(); border = JBUI.Borders.emptyRight(6) }
     private val subjectEdit = InplaceButton(OpenProjectBundle.message("detail.subject.edit"), AllIcons.Actions.Edit) { editSubject() }
-    private val subjectRow = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply { isOpaque = false }
-    private val statusBadge = StatusBadge().apply {
-        icon = AllIcons.General.ChevronDown
-        horizontalTextPosition = SwingConstants.LEFT
-        addMouseListener(object : MouseAdapter() {
-            override fun mouseClicked(e: MouseEvent) {
-                if (controller.details.value?.canEdit == true && SwingUtilities.isLeftMouseButton(e)) chooseStatus(this@apply)
-            }
-        })
-    }
-    private val attributeLine = JBLabel()
+    private val subjectRow = JPanel(WrapLayout(FlowLayout.LEFT, 0, 0)).apply { isOpaque = false }
+    private val typeBadge = dropDownBadge("type") { chooseType(it) }
+    private val statusBadge = dropDownBadge("status") { chooseStatus(it) }
+    private val createdLabel = JBLabel().apply { foreground = UIUtil.getContextHelpForeground() }
+    private val updatedLabel = JBLabel().apply { foreground = UIUtil.getContextHelpForeground() }
     private val activeBadge = JBLabel(OpenProjectBundle.message("detail.active.task"), AllIcons.Vcs.History, JBLabel.LEFT).apply {
         foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
         isVisible = false
@@ -150,7 +149,7 @@ class WorkPackageDetailPanel(
         onDelete = { attachment -> perform { controller.deleteAttachment(attachment) } },
     )
     private val tabs = JBTabbedPane()
-    private val properties = PropertiesPanel(::chooseAssignee, ::choosePriority)
+    private val properties = PropertiesPanel(::chooseValue, ::saveProperty)
 
     init {
         add(UiDataProvider.wrapComponent(JPanel(BorderLayout()).apply {
@@ -215,16 +214,17 @@ class WorkPackageDetailPanel(
             content.removeAll()
             content.add(page(), BorderLayout.CENTER)
         }
-        idLabel.text = "${workPackage.typeTitle.orEmpty()}  ${workPackage.presentableId}".trim()
+        showHierarchy(workPackage)
+        idLabel.text = workPackage.presentableId
         showSubject(workPackage)
-        statusBadge.text = workPackage.statusTitle ?: "?"
-        statusBadge.color = details.statusColor
-        statusBadge.icon = if (details.canEdit) AllIcons.General.ChevronDown else null
-        statusBadge.cursor = if (details.canEdit) Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) else Cursor.getDefaultCursor()
-        statusBadge.toolTipText = if (details.canEdit) OpenProjectBundle.message("detail.status.change") else null
-        attributeLine.text = listOf("assignee", "priority", "project", "updatedAt")
-            .mapNotNull { WorkPackageCells.text(workPackage, it).takeIf(String::isNotBlank) }
-            .joinToString("  ·  ")
+        showBadge(typeBadge, workPackage.typeTitle, details.typeColor, canChange(details, "type"), "detail.type.change")
+        showBadge(statusBadge, workPackage.statusTitle, details.statusColor, canChange(details, "status"), "detail.status.change")
+        val author = workPackage.authorTitle?.takeIf(String::isNotBlank)
+        createdLabel.text = author?.let { OpenProjectBundle.message("detail.created.by", it) }
+        createdLabel.isVisible = author != null
+        val updated = WorkPackageCells.text(workPackage, "updatedAt").takeIf(String::isNotBlank)
+        updatedLabel.text = updated?.let { OpenProjectBundle.message("detail.updated.on", it) }
+        updatedLabel.isVisible = updated != null
         if (!editingDescription) showDescription(workPackage)
         descriptionEditLink.isVisible = details.canEdit && !editingDescription
         activityPanel.show(details.activities, details.userNames, details.canComment, internalCommentsAvailable)
@@ -242,11 +242,10 @@ class WorkPackageDetailPanel(
         val main = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             border = JBUI.Borders.empty(10, 14)
-            add(idLabel)
-            add(subjectRow)
-            add(row(JBLabel(OpenProjectBundle.message("detail.status")), statusBadge, attributeLine, activeBadge).apply {
-                border = JBUI.Borders.emptyTop(4)
-            })
+            add(hierarchyRow)
+            add(subjectRow.apply { border = JBUI.Borders.emptyTop(4) })
+            // Separate labels, so that a narrow page wraps between them.
+            add(row(statusBadge, createdLabel, updatedLabel).apply { border = JBUI.Borders.emptyTop(4) })
             add(row(JBLabel(OpenProjectBundle.message("detail.description")).apply { font = JBFont.h4().asBold() }, descriptionEditLink).apply {
                 border = JBUI.Borders.emptyTop(14)
             })
@@ -254,8 +253,9 @@ class WorkPackageDetailPanel(
             add(properties.apply { border = JBUI.Borders.emptyTop(14) })
         }
         main.components.forEach { (it as? JComponent)?.alignmentX = 0f }
-        // Top-aligned: the column keeps its height instead of spreading over the visible area.
-        val left = JBScrollPane(JPanel(BorderLayout()).apply { add(main, BorderLayout.NORTH) }).apply { border = JBUI.Borders.empty() }
+        // Top-aligned: the column keeps its height instead of spreading over the visible area. As wide as the visible
+        // area, so that rows wrap and the properties take fewer columns when the page gets narrower.
+        val left = JBScrollPane(ViewportWidthPanel().apply { add(main, BorderLayout.NORTH) }).apply { border = JBUI.Borders.empty() }
         return when (layout) {
             Layout.PREVIEW -> OnePixelSplitter(true, "OpenProject.Preview.Split", 0.55f).apply {
                 firstComponent = left
@@ -284,13 +284,60 @@ class WorkPackageDetailPanel(
         }
     }
 
-    private fun showSubject(workPackage: WorkPackage) {
+    /** "#621 User Management / #682 User Creation / #685 Create user button", each opening its work package in a tab. */
+    private fun showHierarchy(workPackage: WorkPackage) {
+        hierarchyRow.removeAll()
+        WorkPackageHierarchy.of(workPackage).forEachIndexed { index, item ->
+            if (index > 0) hierarchyRow.add(JBLabel(" / ").apply { foreground = UIUtil.getContextHelpForeground() })
+            val id = item.workPackageId
+            hierarchyRow.add(if (id == null) {
+                JBLabel(item.text).apply { foreground = UIUtil.getContextHelpForeground() }
+            } else {
+                ActionLink(item.text) { OpenProjectToolWindowManager.getInstance(project).openWorkPackage(serverId, id) }.apply {
+                    toolTipText = OpenProjectBundle.message("detail.hierarchy.open")
+                }
+            })
+        }
+        hierarchyRow.add(Box.createRigidArea(Dimension(JBUI.scale(12), 0)))
+        hierarchyRow.add(activeBadge)
+        hierarchyRow.revalidate()
+    }
+
+    /** Type badge, id and the subject (or [subjectEditor] while the subject is edited). */
+    private fun showSubject(workPackage: WorkPackage, subjectEditor: JComponent? = null) {
         subjectRow.removeAll()
         subjectLabel.text = workPackage.subject
-        subjectRow.add(subjectLabel)
-        if (controller.details.value?.canEdit == true) subjectRow.add(subjectEdit)
+        listOf(typeBadge, idLabel, subjectEditor ?: subjectLabel).forEach {
+            subjectRow.add(it)
+            subjectRow.add(Box.createRigidArea(Dimension(JBUI.scale(8), 0)))
+        }
+        if (subjectEditor == null && controller.details.value?.canEdit == true) subjectRow.add(subjectEdit)
         subjectRow.revalidate()
+        subjectRow.repaint()
     }
+
+    /** A colored badge like OpenProject's status bubble; clicking it opens [choose] when the attribute can be changed. */
+    private fun dropDownBadge(attribute: String, choose: (JComponent) -> Unit): StatusBadge = StatusBadge().apply {
+        horizontalTextPosition = SwingConstants.LEFT
+        addMouseListener(object : MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent) {
+                val details = controller.details.value ?: return
+                if (canChange(details, attribute) && SwingUtilities.isLeftMouseButton(e)) choose(this@apply)
+            }
+        })
+    }
+
+    private fun showBadge(badge: StatusBadge, text: String?, color: Color?, editable: Boolean, tooltipKey: String) {
+        badge.text = text ?: "?"
+        badge.color = color
+        badge.icon = if (editable) AllIcons.General.ChevronDown else null
+        badge.cursor = if (editable) Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) else Cursor.getDefaultCursor()
+        badge.toolTipText = if (editable) OpenProjectBundle.message(tooltipKey) else null
+    }
+
+    /** The user may edit the work package and the schema (when loaded) does not mark [attribute] read-only. */
+    private fun canChange(details: WorkPackageDetails, attribute: String): Boolean =
+        details.canEdit && details.field(attribute)?.writable != false
 
     private fun showDescription(workPackage: WorkPackage) {
         descriptionPanel.removeAll()
@@ -313,9 +360,7 @@ class WorkPackageDetailPanel(
     private fun editSubject() {
         val workPackage = controller.details.value?.workPackage ?: return
         val field = JBTextField(workPackage.subject).apply { font = JBFont.h3() }
-        subjectRow.removeAll()
-        subjectRow.add(field)
-        subjectRow.revalidate()
+        showSubject(workPackage, field)
         field.requestFocusInWindow()
         field.selectAll()
         fun finish(save: Boolean) {
@@ -347,23 +392,63 @@ class WorkPackageDetailPanel(
         }
     }
 
-    private fun chooseAssignee(anchor: JComponent) {
+    private fun chooseType(anchor: JComponent) {
         perform {
-            val users = controller.availableAssignees().map { HalLink(href = it.links.href("self") ?: "/api/v3/users/${it.id}", title = it.name) }
-            val options = listOf(HalLink(href = null, title = OpenProjectBundle.message("detail.unassigned"))) + users
+            val types = controller.allowedTypes()
+            val colors = controller.details.value?.typeColors.orEmpty()
             withContext(Dispatchers.EDT) {
-                choose(anchor, options) { user -> perform { controller.update { it.link("assignee", user.href) } } }
+                choose(anchor, types, color = { it.id?.toLongOrNull()?.let(colors::get) }) { type ->
+                    perform { controller.update { it.link("type", type.href) } }
+                }
             }
         }
     }
 
-    private fun choosePriority(anchor: JComponent) {
-        perform {
-            val priorities = controller.allowedPriorities()
-            withContext(Dispatchers.EDT) {
-                choose(anchor, priorities) { priority -> perform { controller.update { it.link("priority", priority.href) } } }
+    /** Changes a linked attribute of the properties section: a dropdown, a multiple choice or a work package search. */
+    private fun chooseValue(attribute: String, kind: EditorKind, anchor: JComponent) {
+        val details = controller.details.value ?: return
+        val field = details.field(attribute)
+        val name = field?.name ?: attribute
+        val unset = HalLink(href = null, title = OpenProjectBundle.message("detail.unassigned"))
+        when (kind) {
+            EditorKind.WORK_PACKAGE -> {
+                val dialog = ChooseWorkPackageDialog(project, OpenProjectBundle.message("detail.choose.title", name), allowNone = field?.required != true) {
+                    controller.searchWorkPackages(it)
+                }
+                if (dialog.showAndGet()) {
+                    val chosen = dialog.chosen()
+                    perform { controller.update { it.link(attribute, chosen.href) } }
+                }
+            }
+            EditorKind.LINKS -> perform {
+                val options = controller.allowedOptions(attribute)
+                withContext(Dispatchers.EDT) {
+                    val selected = details.workPackage.links.list(attribute).mapNotNull { it.href }.toSet()
+                    val dialog = ChooseValuesDialog(project, OpenProjectBundle.message("detail.choose.title", name), options, selected)
+                    if (dialog.showAndGet()) {
+                        val chosen = dialog.chosen()
+                        perform { controller.update { it.links(attribute, chosen) } }
+                    }
+                }
+            }
+            else -> perform {
+                val options = controller.allowedOptions(attribute)
+                val colors = when (attribute) {
+                    "status" -> details.statusColors
+                    "type" -> details.typeColors
+                    else -> emptyMap()
+                }
+                withContext(Dispatchers.EDT) {
+                    choose(anchor, if (field?.required == true) options else listOf(unset) + options, color = { it.id?.toLongOrNull()?.let(colors::get) }) { value ->
+                        perform { controller.update { it.link(attribute, value.href) } }
+                    }
+                }
             }
         }
+    }
+
+    private fun saveProperty(attribute: String, value: JsonElement, done: (Boolean) -> Unit) {
+        perform(onDone = done) { controller.update { it.property(attribute, value) } }
     }
 
     private fun choose(anchor: JComponent, options: List<HalLink>, color: (HalLink) -> Color? = { null }, onChosen: (HalLink) -> Unit) {
@@ -546,6 +631,20 @@ class WorkPackageDetailPanel(
         val toolbar = actions.createActionToolbar("OpenProject.WorkPackage", group, true)
         toolbar.targetComponent = content
         return toolbar.component.apply { border = JBUI.Borders.customLineBottom(JBColor.border()) }
+    }
+
+    /** A scroll pane view that always has the width of the viewport (it scrolls vertically only). */
+    private class ViewportWidthPanel : JPanel(BorderLayout()), Scrollable {
+        override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
+
+        override fun getScrollableUnitIncrement(visibleRect: Rectangle, orientation: Int, direction: Int): Int = JBUI.scale(16)
+
+        override fun getScrollableBlockIncrement(visibleRect: Rectangle, orientation: Int, direction: Int): Int =
+            if (orientation == SwingConstants.VERTICAL) visibleRect.height else visibleRect.width
+
+        override fun getScrollableTracksViewportWidth(): Boolean = true
+
+        override fun getScrollableTracksViewportHeight(): Boolean = (parent as? JViewport)?.let { it.height > preferredSize.height } ?: false
     }
 
     @TestOnly

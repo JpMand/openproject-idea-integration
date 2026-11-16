@@ -15,9 +15,13 @@ Work with [OpenProject](https://www.openproject.org) work packages without leavi
 - **More lists in tabs**: *Open as New Tab* keeps the current filters in a tab of their own; <kbd>+</kbd> after the
   last tab opens a fresh list.
 - **Work package preview and tabs**: clicking a work package shows it next to the list; *Open in New Tab* opens it in a
-  tab with subject, description and properties on the left and activity, relations and files on the right. Edit the
-  subject, status, description (Markdown with preview), assignee and priority; add comments; add and remove
-  relations; upload (also by drag & drop), download, open and delete files.
+  tab with subject, description and properties on the left and activity, relations and files on the right. Above the
+  subject, the parent hierarchy (`#621 User Management / #682 User Creation / #685 …`, each opening its work package in
+  a tab) and the active task marker. Change the type and status from their colored badges; edit the subject and
+  description (Markdown with preview). Properties are grouped like the OpenProject form (Details, People, …) in up to
+  three columns; every attribute the server marks as writable, empty ones included, is edited to suit its type (dropdowns,
+  date picker, text, number and duration fields, checkboxes). Add comments; add and remove relations; upload (also by
+  drag & drop), download, open and delete files.
 - **Time logging** with a *Log Time* dialog (date, duration such as `1h 30m`, activity, comment).
 - **Active task at a glance**: the work package of the active task is shown in the status bar (`OP #123`, click to
   open it), as a banner above the work package table and as a highlighted row.

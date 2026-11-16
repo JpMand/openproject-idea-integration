@@ -12,6 +12,8 @@
 - "Spent time" cells turn red when more time was spent than the work (possible overtime); the tooltip shows both
 - Statuses in their OpenProject colors: status cells of the list, the Status filter dropdowns, and a status badge in the work package preview and tab
 - The list scrolls horizontally when its columns do not fit; columns keep a minimum width for percentages, durations and dates
+- Work package page header: the parent hierarchy above the subject (each ancestor opens in a tab) with the active task marker, the type as a colored badge that changes the type, the id before the subject, and "Created by" and "Last update on" next to the status
+- Work package properties in the groups of the OpenProject form, in up to three columns as the width allows; empty attributes are shown, and every writable attribute (per the work package's form schema) can be edited with a dropdown, date (and time) picker, text, number or duration field or checkbox
 - Supports IntelliJ IDEA 2026.1 and later (no until-build); the Plugin Verifier checks the latest 2026.1, 2026.2 and 2026.3 releases
 
 ### Added

@@ -2,6 +2,7 @@ package com.github.jpmand.openproject.idea.ui.common
 
 import com.github.jpmand.openproject.idea.api.model.Status
 import com.github.jpmand.openproject.idea.api.model.WorkPackage
+import com.github.jpmand.openproject.idea.api.model.WorkPackageType
 import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.ColorIcon
@@ -33,9 +34,15 @@ object StatusColors {
     /** Status id -> color, for the statuses that have one. */
     fun of(statuses: List<Status>): Map<Long, Color> = statuses.mapNotNull { status -> parse(status.color)?.let { status.id to it } }.toMap()
 
+    /** Type id -> color, for the types that have one. */
+    fun ofTypes(types: List<WorkPackageType>): Map<Long, Color> = types.mapNotNull { type -> parse(type.color)?.let { type.id to it } }.toMap()
+
     /** The color of a work package's status in [colors]. */
-    fun of(workPackage: WorkPackage, colors: Map<Long, Color>): Color? =
-        workPackage.links["status"]?.id?.toLongOrNull()?.let(colors::get)
+    fun of(workPackage: WorkPackage, colors: Map<Long, Color>): Color? = of(workPackage, "status", colors)
+
+    /** The color of the resource a work package links as [attribute] ("status", "type") in [colors] (by id). */
+    fun of(workPackage: WorkPackage, attribute: String, colors: Map<Long, Color>): Color? =
+        workPackage.links[attribute]?.id?.toLongOrNull()?.let(colors::get)
 
     /** Dark text on light colors, white text on dark ones. */
     fun textOn(background: Color): Color = if (luminance(background) > 0.5) DARK_TEXT else Color.WHITE

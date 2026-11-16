@@ -202,6 +202,24 @@ class OpenProjectApi(private val http: HttpClient, baseUrl: String) : AutoClosea
 
     suspend fun workPackageSchema(href: String): Schema = Schema(get(resolve(href)))
 
+    /**
+     * The values a schema allows when it links a collection instead of listing them (`_links.allowedValues`, e.g.
+     * available assignees or versions), as (href, title) pairs.
+     */
+    suspend fun allowedValues(href: String, pageSize: Int = 500): List<HalLink> {
+        val collection = get<JsonObject>(resolve(href)) { parameter("pageSize", pageSize) }
+        val elements = (collection["_embedded"] as? JsonObject)?.get("elements") as? kotlinx.serialization.json.JsonArray
+        return elements.orEmpty().mapNotNull { element ->
+            val json = element as? JsonObject ?: return@mapNotNull null
+            val self = ((json["_links"] as? JsonObject)?.get("self") as? JsonObject)
+            val href = (self?.get("href") as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+            fun text(key: String) = (json[key] as? JsonPrimitive)?.contentOrNull
+            val title = text("name") ?: text("subject")?.let { subject -> text("id")?.let { "#$it $subject" } ?: subject }
+                ?: (self["title"] as? JsonPrimitive)?.contentOrNull
+            HalLink(href = href, title = title)
+        }
+    }
+
     /** Candidates for a new relation of [type] ("relates", "follows", ...) matching [query] (id or subject). */
     suspend fun relationCandidates(workPackage: WorkPackage, query: String, type: String, pageSize: Int = 20): List<WorkPackage> =
         get<HalCollection<JsonObject>>(apiUrl("work_packages/${workPackage.id}/available_relation_candidates")) {

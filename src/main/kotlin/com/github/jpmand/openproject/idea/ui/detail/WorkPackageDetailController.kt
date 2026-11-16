@@ -1,13 +1,17 @@
 package com.github.jpmand.openproject.idea.ui.detail
 
+import com.github.jpmand.openproject.idea.api.Filters
 import com.github.jpmand.openproject.idea.api.OpenProjectApiException
+import com.github.jpmand.openproject.idea.api.WorkPackageQuery
 import com.github.jpmand.openproject.idea.api.WorkPackagePatch
 import com.github.jpmand.openproject.idea.api.hal.HalLink
 import com.github.jpmand.openproject.idea.api.model.Activity
 import com.github.jpmand.openproject.idea.api.model.Attachment
 import com.github.jpmand.openproject.idea.api.model.Principal
 import com.github.jpmand.openproject.idea.api.model.Relation
+import com.github.jpmand.openproject.idea.api.model.AttributeGroup
 import com.github.jpmand.openproject.idea.api.model.Schema
+import com.github.jpmand.openproject.idea.api.model.SchemaField
 import com.github.jpmand.openproject.idea.api.model.WorkPackage
 import com.github.jpmand.openproject.idea.core.OpenProjectConnection
 import com.github.jpmand.openproject.idea.core.OpenProjectServer
@@ -40,8 +44,25 @@ data class WorkPackageDetails(
     val userNames: Map<String, String> = emptyMap(),
     /** Status id -> OpenProject color, for the status badge and chooser. */
     val statusColors: Map<Long, Color> = emptyMap(),
+    /** Type id -> OpenProject color, for the type badge and chooser. */
+    val typeColors: Map<Long, Color> = emptyMap(),
+    /**
+     * The schema of the work package's edit form (null without edit permission): unlike [schema], which is shared by
+     * all work packages of the project and type, it tells which attributes of this one can be changed.
+     */
+    val formSchema: Schema? = null,
 ) {
     val statusColor: Color? get() = StatusColors.of(workPackage, statusColors)
+    val typeColor: Color? get() = StatusColors.of(workPackage, "type", typeColors)
+
+    /** The schema field of [attribute], preferring the edit form's. */
+    fun field(attribute: String): SchemaField? = formSchema?.get(attribute) ?: schema?.get(attribute)
+
+    /** The form groups of the attributes ("Details", "People", ...); empty when the server sends none. */
+    val attributeGroups: List<AttributeGroup> get() = schema?.attributeGroups.orEmpty().ifEmpty { formSchema?.attributeGroups.orEmpty() }
+
+    /** The user may edit the work package and the schema marks [attribute] as writable. */
+    fun isWritable(attribute: String): Boolean = canEdit && field(attribute)?.writable == true
 
     val ref: WorkPackageRef get() = WorkPackageRef(server, workPackage)
     val canEdit: Boolean get() = workPackage.links.has("update") || workPackage.links.has("updateImmediately")
@@ -83,6 +104,11 @@ class WorkPackageDetailController(private val project: Project, private val serv
         val relations = async { runCatching { api.relations(workPackage) }.getOrDefault(emptyList()) }
         val attachments = async { runCatching { api.attachments(workPackage) }.getOrDefault(emptyList()) }
         val statusColors = async { runCatching { StatusColors.of(connection.statuses()) }.getOrDefault(emptyMap()) }
+        val typeColors = async { runCatching { StatusColors.ofTypes(connection.types()) }.getOrDefault(emptyMap()) }
+        val formSchema = async {
+            if (!workPackage.links.has("update") && !workPackage.links.has("updateImmediately")) return@async null
+            runCatching { api.workPackageForm(workPackage, WorkPackagePatch(workPackage.lockVersion)).schema }.getOrNull()
+        }
         val loadedActivities = activities.await()
         val userNames = loadedActivities.mapNotNull { it.links.href("user") }.distinct()
             .map { href -> async { href to runCatching { connection.cached("principal:$href", 60.minutes) { api.getJson(href) } }.getOrNull() } }
@@ -91,8 +117,10 @@ class WorkPackageDetailController(private val project: Project, private val serv
                 ((json?.get("name") as? JsonPrimitive)?.contentOrNull)?.let { href to it }
             }
             .toMap()
-        WorkPackageDetails(server, workPackage, schema.await(), loadedActivities, relations.await(), attachments.await(), userNames, statusColors.await())
-            .also { _details.value = it }
+        WorkPackageDetails(
+            server, workPackage, schema.await(), loadedActivities, relations.await(), attachments.await(), userNames,
+            statusColors.await(), typeColors.await(), formSchema.await(),
+        ).also { _details.value = it }
     }
 
     private fun current(): WorkPackageDetails = _details.value ?: error("Work package not loaded")
@@ -119,6 +147,30 @@ class WorkPackageDetailController(private val project: Project, private val serv
     suspend fun allowedStatuses(): List<HalLink> = allowedValues("status")
 
     suspend fun allowedPriorities(): List<HalLink> = allowedValues("priority")
+
+    /** Types the work package can be changed to. */
+    suspend fun allowedTypes(): List<HalLink> = allowedValues("type")
+
+    /**
+     * The values [attribute] can be set to, from a fresh work package form: listed in the schema or, for
+     * users, versions and the like, fetched from the collection the schema links.
+     */
+    suspend fun allowedOptions(attribute: String): List<HalLink> {
+        val workPackage = current().workPackage
+        val field = connection().api.workPackageForm(workPackage, WorkPackagePatch(workPackage.lockVersion)).schema[attribute] ?: return emptyList()
+        return field.allowedOptions
+            .ifEmpty { field.allowedValuesHref?.let { connection().api.allowedValues(it) }.orEmpty() }
+            .ifEmpty {
+                if (attribute != "assignee" && attribute != "responsible") return@ifEmpty emptyList()
+                availableAssignees().map { HalLink(href = it.links.href("self") ?: "/api/v3/users/${it.id}", title = it.name) }
+            }
+    }
+
+    /** Work packages matching [query] (id or subject), e.g. to choose a parent; never this one. */
+    suspend fun searchWorkPackages(query: String, pageSize: Int = 20): List<WorkPackage> {
+        val filters = listOf(Filters.anyStatus()) + listOfNotNull(query.trim().takeIf { it.isNotEmpty() }?.let(Filters::subjectOrId))
+        return connection().api.workPackages(WorkPackageQuery(filters = filters, pageSize = pageSize)).elements.filter { it.id != workPackageId }
+    }
 
     /** Users the work package can be assigned to. */
     suspend fun availableAssignees(): List<Principal> = connection().api.availableAssignees(current().workPackage)

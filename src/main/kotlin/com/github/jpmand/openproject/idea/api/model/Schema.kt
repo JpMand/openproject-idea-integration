@@ -22,8 +22,21 @@ class Schema(val json: JsonObject) {
 
     operator fun get(attribute: String): SchemaField? = fields[attribute]
 
+    /**
+     * The groups the work package form shows (`_attributeGroups`: "Details", "People", "Costs", ...), in order. Only
+     * attribute groups are kept; query groups (embedded tables of children or relations) have no attributes.
+     */
+    val attributeGroups: List<AttributeGroup> = (json["_attributeGroups"] as? JsonArray).orEmpty().mapNotNull { group ->
+        val obj = group as? JsonObject ?: return@mapNotNull null
+        val attributes = (obj["attributes"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull } ?: return@mapNotNull null
+        AttributeGroup((obj["name"] as? JsonPrimitive)?.contentOrNull.orEmpty(), attributes)
+    }
+
     val links: HalLinks get() = json["_links"]?.let { HalJson.read.decodeFromJsonElement(HalLinks.serializer(), it) } ?: HalLinks.EMPTY
 }
+
+/** A named group of attributes of the work package form, e.g. "People" with `assignee` and `responsible`. */
+data class AttributeGroup(val name: String, val attributes: List<String>)
 
 data class SchemaField(
     val attribute: String,
@@ -37,6 +50,11 @@ data class SchemaField(
     val location: String?,
     val allowedValueLinks: List<HalLink>,
     val embeddedAllowedValues: List<JsonObject>,
+    /**
+     * A collection to fetch the allowed values from (e.g. `/api/v3/work_packages/12/available_assignees`) when the
+     * schema links one instead of listing the values.
+     */
+    val allowedValuesHref: String? = null,
 ) {
     val isLink: Boolean get() = location == "_links"
     val isMultiValue: Boolean get() = type.startsWith("[]")
@@ -44,7 +62,7 @@ data class SchemaField(
 
     /** Allowed values as (href, title), from either `_links.allowedValues` or embedded resources. */
     val allowedOptions: List<HalLink>
-        get() = allowedValueLinks.ifEmpty {
+        get() = allowedValueLinks.filter { allowedValuesHref == null || it.href != allowedValuesHref }.ifEmpty {
             embeddedAllowedValues.mapNotNull { value ->
                 val links = value["_links"]?.let { HalJson.read.decodeFromJsonElement(HalLinks.serializer(), it) } ?: return@mapNotNull null
                 val name = (value["name"] as? JsonPrimitive)?.contentOrNull ?: links.title("self")
@@ -58,6 +76,9 @@ data class SchemaField(
             fun bool(key: String) = (json[key] as? JsonPrimitive)?.booleanOrNull ?: false
             val links = json["_links"]?.let { HalJson.read.decodeFromJsonElement(HalLinks.serializer(), it) } ?: HalLinks.EMPTY
             val embedded = (json["_embedded"] as? JsonObject)?.get("allowedValues") as? JsonArray
+            // A single link object (not an array) points to a collection of the allowed values.
+            val collection = ((json["_links"] as? JsonObject)?.get("allowedValues") as? JsonObject)
+                ?.let { (it["href"] as? JsonPrimitive)?.contentOrNull }
             return SchemaField(
                 attribute = attribute,
                 type = str("type").orEmpty(),
@@ -68,6 +89,7 @@ data class SchemaField(
                 location = str("location"),
                 allowedValueLinks = links.list("allowedValues"),
                 embeddedAllowedValues = embedded?.mapNotNull { it as? JsonObject }.orEmpty(),
+                allowedValuesHref = collection,
             )
         }
     }

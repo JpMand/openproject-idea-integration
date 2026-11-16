@@ -1,0 +1,82 @@
+{
+  "_type": "Schema",
+  "_dependencies": [],
+  "_attributeGroups": [
+    {
+      "_type": "WorkPackageFormAttributeGroup",
+      "name": "People",
+      "attributes": ["assignee", "responsible"]
+    },
+    {
+      "_type": "WorkPackageFormAttributeGroup",
+      "name": "Estimates and progress",
+      "attributes": ["estimatedTime", "remainingTime", "spentTime", "percentageDone"]
+    },
+    {
+      "_type": "WorkPackageFormAttributeGroup",
+      "name": "Details",
+      "attributes": ["date", "duration", "category", "version", "priority", "customField3", "customField4", "noSuchAttribute"]
+    },
+    {
+      "_type": "WorkPackageFormAttributeGroup",
+      "name": "Other",
+      "attributes": ["customField5", "customField6", "customField7", "customField8"]
+    },
+    {
+      "_type": "WorkPackageFormQueryGroup",
+      "name": "Children",
+      "_embedded": {"query": {"_type": "Query"}}
+    }
+  ],
+  "lockVersion": {"type": "Integer", "name": "Lock Version", "required": true, "hasDefault": false, "writable": false},
+  "id": {"type": "Integer", "name": "ID", "required": true, "hasDefault": false, "writable": false},
+  "subject": {"type": "String", "name": "Subject", "required": true, "hasDefault": false, "writable": true, "minLength": 1, "maxLength": 255},
+  "description": {"type": "Formattable", "name": "Description", "required": false, "hasDefault": false, "writable": true},
+  "duration": {"type": "Duration", "name": "Duration", "required": false, "hasDefault": false, "writable": true},
+  "startDate": {"type": "Date", "name": "Start date", "required": false, "hasDefault": false, "writable": true},
+  "dueDate": {"type": "Date", "name": "Finish date", "required": false, "hasDefault": false, "writable": true},
+  "estimatedTime": {"type": "Duration", "name": "Work", "required": false, "hasDefault": false, "writable": true},
+  "remainingTime": {"type": "Duration", "name": "Remaining work", "required": false, "hasDefault": false, "writable": true},
+  "spentTime": {"type": "Duration", "name": "Spent time", "required": false, "hasDefault": false, "writable": false},
+  "percentageDone": {"type": "Integer", "name": "% Complete", "required": false, "hasDefault": false, "writable": true},
+  "createdAt": {"type": "DateTime", "name": "Created on", "required": true, "hasDefault": false, "writable": false},
+  "updatedAt": {"type": "DateTime", "name": "Updated on", "required": true, "hasDefault": false, "writable": false},
+  "author": {"type": "User", "name": "Author", "required": true, "hasDefault": false, "writable": false, "location": "_links"},
+  "project": {
+    "type": "Project", "name": "Project", "required": true, "hasDefault": false, "writable": true, "location": "_links",
+    "_links": {"allowedValues": {"href": "/api/v3/work_packages/available_projects?for_work_package=24971"}}
+  },
+  "parent": {"type": "WorkPackage", "name": "Parent", "required": false, "hasDefault": false, "writable": true, "location": "_links"},
+  "assignee": {
+    "type": "User", "name": "Assignee", "required": false, "hasDefault": false, "writable": true, "location": "_links",
+    "_links": {"allowedValues": {"href": "/api/v3/work_packages/24971/available_assignees"}}
+  },
+  "responsible": {
+    "type": "User", "name": "Accountable", "required": false, "hasDefault": false, "writable": true, "location": "_links",
+    "_links": {"allowedValues": {"href": "/api/v3/work_packages/24971/available_responsibles"}}
+  },
+  "type": {
+    "type": "Type", "name": "Type", "required": true, "hasDefault": false, "writable": true, "location": "_links",
+    "_links": {"allowedValues": [{"href": "/api/v3/types/1", "title": "Task"}, {"href": "/api/v3/types/2", "title": "Milestone"}]}
+  },
+  "status": {
+    "type": "Status", "name": "Status", "required": true, "hasDefault": true, "writable": true, "location": "_links",
+    "_links": {"allowedValues": [{"href": "/api/v3/statuses/1", "title": "New"}, {"href": "/api/v3/statuses/7", "title": "In progress"}]}
+  },
+  "category": {"type": "Category", "name": "Category", "required": false, "hasDefault": false, "writable": true, "location": "_links"},
+  "version": {"type": "Version", "name": "Version", "required": false, "hasDefault": false, "writable": true, "location": "_links"},
+  "priority": {
+    "type": "Priority", "name": "Priority", "required": true, "hasDefault": true, "writable": true, "location": "_links",
+    "_links": {"allowedValues": [{"href": "/api/v3/priorities/7", "title": "Normal"}, {"href": "/api/v3/priorities/8", "title": "High"}]}
+  },
+  "customField3": {"type": "Boolean", "name": "Billable", "required": false, "hasDefault": false, "writable": true},
+  "customField4": {"type": "Float", "name": "Budget factor", "required": false, "hasDefault": false, "writable": true},
+  "customField5": {"type": "Formattable", "name": "Notes", "required": false, "hasDefault": false, "writable": true},
+  "customField6": {
+    "type": "[]CustomOption", "name": "Platforms", "required": false, "hasDefault": false, "writable": true, "location": "_links",
+    "_links": {"allowedValues": [{"href": "/api/v3/custom_options/1", "title": "Linux"}, {"href": "/api/v3/custom_options/2", "title": "Windows"}]}
+  },
+  "customField7": {"type": "String", "name": "Ticket", "required": false, "hasDefault": false, "writable": true},
+  "customField8": {"type": "Date", "name": "Release day", "required": true, "hasDefault": false, "writable": true},
+  "_links": {"self": {"href": "/api/v3/work_packages/schemas/1534-1"}}
+}

@@ -1,6 +1,7 @@
 package com.github.jpmand.openproject.idea.api.model
 
 import com.github.jpmand.openproject.idea.api.hal.Formattable
+import com.github.jpmand.openproject.idea.api.hal.HalLink
 import com.github.jpmand.openproject.idea.api.hal.HalLinks
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -41,4 +42,8 @@ data class WorkPackage(
     val typeTitle: String? get() = links.title("type")
     val projectTitle: String? get() = links.title("project")
     val assigneeTitle: String? get() = links.title("assignee")
+    val authorTitle: String? get() = links.title("author")
+
+    /** Parent, grandparent, ... as links titled with their subjects, the root first. */
+    val ancestors: List<HalLink> get() = links.list("ancestors")
 }

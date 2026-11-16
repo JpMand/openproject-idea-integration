@@ -6,8 +6,11 @@ import com.github.jpmand.openproject.idea.core.OpenProjectServers
 import com.github.jpmand.openproject.idea.tasks.OpenProjectRepository
 import com.github.jpmand.openproject.idea.tasks.OpenProjectRepositoryType
 import com.github.jpmand.openproject.idea.ui.detail.ConcurrentChangeException
+import com.github.jpmand.openproject.idea.ui.detail.EditorKind
+import com.github.jpmand.openproject.idea.ui.detail.PropertyEditing
 import com.github.jpmand.openproject.idea.ui.detail.RelationsPanel
 import com.github.jpmand.openproject.idea.ui.detail.WorkPackageDetailPanel
+import com.github.jpmand.openproject.idea.ui.detail.WorkPackageHierarchy
 import com.intellij.openapi.util.Disposer
 import com.intellij.tasks.TaskManager
 import com.intellij.tasks.TaskRepositoryType
@@ -16,6 +19,7 @@ import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayOutputStream
+import java.time.LocalDate
 
 /** The work package page against a real OpenProject: every edit it offers. */
 class DetailPanelIntegrationTest : BasePlatformTestCase() {
@@ -115,6 +119,43 @@ class DetailPanelIntegrationTest : BasePlatformTestCase() {
         assertTrue(related.any { it.relation?.id == relation.id && it.label == RelationsPanel.label("blocks") && it.target.id == other.id.toString() })
         controller.deleteRelation(controller.details.value!!.relations.first { it.id == relation.id })
         assertTrue(controller.details.value!!.relations.none { it.id == relation.id })
+    }
+
+    fun `test hierarchy groups type and typed property edits`() = runBlocking {
+        val details = controller.details.value!!
+        // the form schema tells what this work package allows; the server groups the attributes
+        assertNotNull(details.formSchema)
+        assertTrue(details.isWritable("startDate"))
+        assertFalse(details.isWritable("spentTime"))
+        val groups = PropertyEditing.groups(details)
+        assertTrue(groups.size > 1)
+        assertTrue(groups.flatMap { it.attributes }.containsAll(listOf("assignee", "startDate", "dueDate", "estimatedTime")))
+        assertNotNull(details.typeColor)
+
+        controller.update { it.property("startDate", PropertyEditing.date(LocalDate.of(2026, 3, 2))) }
+        assertEquals("2026-03-02", controller.details.value!!.workPackage.startDate)
+        controller.update { it.property("startDate", PropertyEditing.date(null)) }
+        assertNull(controller.details.value!!.workPackage.startDate)
+        controller.update { it.property("estimatedTime", PropertyEditing.parse(EditorKind.DURATION, "1h 30m", required = false)!!) }
+        assertEquals("PT1H30M", controller.details.value!!.workPackage.estimatedTime)
+
+        // linked values come from the form, listed or fetched from the collection it links
+        val assignee = controller.allowedOptions("assignee").first()
+        controller.update { it.link("assignee", assignee.href) }
+        assertEquals(assignee.href, controller.details.value!!.workPackage.links.href("assignee"))
+        assertTrue(controller.allowedOptions("priority").isNotEmpty())
+
+        val type = controller.allowedTypes().first { it.href != controller.details.value!!.workPackage.links.href("type") && it.title != "Milestone" }
+        controller.update { it.link("type", type.href) }
+        assertEquals(type.title, controller.details.value!!.workPackage.typeTitle)
+
+        // a child shows its parent in the hierarchy
+        val parent = OpenProjectIntegration.newApi().use { OpenProjectIntegration.createWorkPackage(it, PREFIX + "parent") }
+        assertTrue(controller.searchWorkPackages(parent.id.toString()).any { it.id == parent.id })
+        controller.update { it.link("parent", "/api/v3/work_packages/${parent.id}") }
+        val hierarchy = WorkPackageHierarchy.of(controller.details.value!!.workPackage)
+        assertEquals(listOf(parent.id, workPackage.id), hierarchy.map { it.workPackageId })
+        assertEquals("#${parent.id} ${PREFIX}parent", hierarchy.first().text)
     }
 
     private companion object {

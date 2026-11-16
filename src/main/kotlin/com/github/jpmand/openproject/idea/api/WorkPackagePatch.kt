@@ -1,5 +1,6 @@
 package com.github.jpmand.openproject.idea.api
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -24,6 +25,11 @@ class WorkPackagePatch(private val lockVersion: Int?) {
     /** Sets a linked attribute (status, assignee, priority, type, version, parent, ...); `null` unsets it. */
     fun link(name: String, href: String?) = apply {
         links[name] = buildJsonObject { put("href", href?.let(::JsonPrimitive) ?: JsonNull) }
+    }
+
+    /** Sets a multi-value linked attribute (e.g. a custom field of type "[]User"); an empty list unsets it. */
+    fun links(name: String, hrefs: List<String>) = apply {
+        links[name] = JsonArray(hrefs.map { href -> buildJsonObject { put("href", href) } })
     }
 
     val isEmpty: Boolean get() = properties.isEmpty() && links.isEmpty()
