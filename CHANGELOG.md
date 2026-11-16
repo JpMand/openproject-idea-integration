@@ -12,6 +12,7 @@
 - "Spent time" cells turn red when more time was spent than the work (possible overtime); the tooltip shows both
 - Statuses in their OpenProject colors: status cells of the list, the Status filter dropdowns, and a status badge in the work package preview and tab
 - Type and priority cells of the list show their OpenProject colors like status cells, and the Type and Priority filter dropdowns show color swatches
+- Text on status, type and priority colors is dark or white, whichever has the higher contrast ratio (WCAG), so light and mid-tone colors such as the "Normal" priority stay readable
 - The list scrolls horizontally when its columns do not fit; columns keep a minimum width for percentages, durations and dates
 - Work package page header: the parent hierarchy above the subject (each ancestor opens in a tab) with the active task marker, the type as a colored badge that changes the type, the id before the subject, and "Created by" and "Last update on" next to the status
 - Work package properties in the groups of the OpenProject form, in up to three columns as the width allows; empty attributes are shown, and every writable attribute (per the work package's form schema) can be edited with a dropdown, date (and time) picker, text, number or duration field or checkbox

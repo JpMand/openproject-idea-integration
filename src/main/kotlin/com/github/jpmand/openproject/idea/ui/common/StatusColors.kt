@@ -49,8 +49,15 @@ object StatusColors {
     fun of(workPackage: WorkPackage, attribute: String, colors: Map<Long, Color>): Color? =
         workPackage.links[attribute]?.id?.toLongOrNull()?.let(colors::get)
 
-    /** Dark text on light colors, white text on dark ones. */
-    fun textOn(background: Color): Color = if (luminance(background) > 0.5) DARK_TEXT else Color.WHITE
+    /** Dark or white text, whichever contrasts more with [background] (WCAG contrast ratio). */
+    fun textOn(background: Color): Color =
+        if (contrast(DARK_TEXT, background) >= contrast(Color.WHITE, background)) DARK_TEXT else Color.WHITE
+
+    /** WCAG contrast ratio of two colors, from 1 (none) to 21 (black on white). */
+    fun contrast(a: Color, b: Color): Double {
+        val (light, dark) = listOf(luminance(a), luminance(b)).sortedDescending()
+        return (light + 0.05) / (dark + 0.05)
+    }
 
     fun swatch(color: Color?): Icon? = color?.let { ColorIcon(JBUI.scale(12), it, true) }
 

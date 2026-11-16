@@ -25,10 +25,18 @@ class StatusColorsTest {
 
     @Test
     fun `text stays readable on the status color`() {
-        assertEquals(Color.WHITE, StatusColors.textOn(Color(0xBE4BDB)))
-        assertEquals(Color.WHITE, StatusColors.textOn(Color(0x1098AD)))
-        assertEquals(Color(0x1E1F22), StatusColors.textOn(Color(0xC3FAE8)))
-        assertEquals(Color(0x1E1F22), StatusColors.textOn(Color(0xFFEC99)))
+        val dark = Color(0x1E1F22)
+        // the text color with the higher contrast ratio wins
+        assertEquals(Color.WHITE, StatusColors.textOn(Color(0x1A67A3)))
+        assertEquals(Color.WHITE, StatusColors.textOn(Color(0x845EF7)))
+        assertEquals(dark, StatusColors.textOn(Color(0xC3FAE8)))
+        assertEquals(dark, StatusColors.textOn(Color(0xFFEC99)))
+        // mid-tones such as OpenProject's "Normal" priority and teal/purple statuses read better with dark text
+        assertEquals(dark, StatusColors.textOn(Color(0x74C0FC)))
+        assertEquals(dark, StatusColors.textOn(Color(0x1098AD)))
+        assertEquals(dark, StatusColors.textOn(Color(0xCC5DE8)))
+        assertEquals(21.0, StatusColors.contrast(Color.BLACK, Color.WHITE), 0.01)
+        assertEquals(1.0, StatusColors.contrast(Color(0x74C0FC), Color(0x74C0FC)), 0.001)
     }
 
     @Test

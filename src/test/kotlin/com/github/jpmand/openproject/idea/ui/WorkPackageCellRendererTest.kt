@@ -110,7 +110,7 @@ class WorkPackageCellRendererTest : BasePlatformTestCase() {
         val (image, label) = paint(item, columnId = "status")
         assertEquals(statusColor, Color(image.getRGB(2, 2)))
         assertEquals(statusColor, Color(image.getRGB(195, 17)))
-        assertEquals(Color.WHITE, label.foreground)
+        assertEquals(StatusColors.textOn(statusColor), label.foreground)
 
         val (selected, _) = paint(item, columnId = "status", selected = true)
         assertEquals(statusColor, Color(selected.getRGB(1, 10)))
@@ -132,14 +132,15 @@ class WorkPackageCellRendererTest : BasePlatformTestCase() {
         assertFalse(Color(subject.getRGB(2, 2)) in setOf(statusColor, typeColor, priorityColor))
     }
 
-    fun `test colors of a status cell do not leak into the next cell`() {
+    fun `test colors of a colored cell do not leak into the next cell`() {
         val item = workPackage(null)
-        var column = "status"
+        var column = "type"
         val renderer = WorkPackageCellRenderer({ _, _ -> item }, { _, _ -> column }, { false }, ::colorOf)
-        paint(item, columnId = "status", renderer = renderer)
+        // the type color is dark enough for white text
+        assertEquals(Color.WHITE, paint(item, columnId = "type", renderer = renderer).second.foreground)
         column = "subject"
         val (image, label) = paint(item, columnId = "subject", renderer = renderer)
-        assertFalse(statusColor == Color(image.getRGB(2, 2)))
+        assertFalse(typeColor == Color(image.getRGB(2, 2)))
         assertFalse(Color.WHITE == label.foreground)
     }
 }
