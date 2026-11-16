@@ -1,5 +1,6 @@
 package com.github.jpmand.openproject.idea.tasks
 
+import com.github.jpmand.openproject.idea.OpenProjectBundle
 import com.github.jpmand.openproject.idea.api.Durations
 import com.github.jpmand.openproject.idea.api.Filters
 import com.github.jpmand.openproject.idea.api.OpenProjectApiException
@@ -10,7 +11,12 @@ import com.github.jpmand.openproject.idea.api.model.WorkPackage
 import com.github.jpmand.openproject.idea.core.OpenProjectClientPool
 import com.github.jpmand.openproject.idea.core.OpenProjectConnection
 import com.github.jpmand.openproject.idea.core.TimeEntries
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.runBlockingMaybeCancellable
+import com.intellij.openapi.util.ThrowableComputable
 import com.intellij.tasks.CustomTaskState
 import com.intellij.tasks.LocalTask
 import com.intellij.tasks.Task
@@ -19,11 +25,14 @@ import com.intellij.tasks.TaskRepositoryType
 import com.intellij.tasks.impl.BaseRepository
 import com.intellij.util.concurrency.annotations.RequiresBackgroundThread
 import com.intellij.util.xmlb.annotations.Tag
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
+import org.jetbrains.annotations.VisibleForTesting
 import java.time.Duration
 import java.time.LocalDate
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * An OpenProject Task Server. The URL and the API token (stored as the password, in the password safe) are the
@@ -143,21 +152,34 @@ class OpenProjectRepository : BaseRepository {
             .toSet()
     }
 
+    /** Called by Close Task (on the EDT) and Open Task; Close Task shows a failure in an error dialog. */
     override fun setTaskState(task: Task, state: CustomTaskState) {
-        blocking {
-            val api = connection().api
-            suspend fun update() {
-                val fresh = api.workPackage(task.id.toLong())
-                api.updateWorkPackage(fresh, WorkPackagePatch(fresh.lockVersion).link("status", state.id))
+        try {
+            blocking {
+                val api = connection().api
+                suspend fun update() {
+                    val fresh = api.workPackage(task.id.toLong())
+                    api.updateWorkPackage(fresh, WorkPackagePatch(fresh.lockVersion).link("status", state.id))
+                }
+                try {
+                    update()
+                } catch (e: OpenProjectApiException) {
+                    // Someone else changed the work package between our read and write: re-read once.
+                    if (e.isConflict) update() else throw e
+                }
             }
-            try {
-                update()
-            } catch (e: OpenProjectApiException) {
-                // Someone else changed the work package between our read and write: re-read once.
-                if (e.isConflict) update() else throw e
-            }
+        } catch (e: Exception) {
+            if (e !is ProcessCanceledException && e !is CancellationException) LOG.warn("Could not set the status of #${task.id} to ${state.presentableName}", e)
+            throw e
         }
+        LOG.info("Status of #${task.id} set to ${state.presentableName}")
+        stateChanges[stateKey(task.id)] = state.presentableName
     }
+
+    /** The status [setTaskState] last set for [taskId] (e.g. by Close Task), forgotten once taken. */
+    fun takeStateChange(taskId: String): String? = stateChanges.remove(stateKey(taskId))
+
+    private fun stateKey(taskId: String) = "${url.orEmpty().trimEnd('/')}#$taskId"
 
     override fun updateTimeSpent(task: LocalTask, timeSpent: String, comment: String) {
         val duration = parseTimeSpent(timeSpent) ?: throw IllegalArgumentException("Unsupported time format: $timeSpent")
@@ -198,6 +220,24 @@ class OpenProjectRepository : BaseRepository {
             return Durations.parseHuman(timeSpent)
         }
 
-        private fun <T> blocking(action: suspend kotlinx.coroutines.CoroutineScope.() -> T): T = runBlockingMaybeCancellable(action)
+        private val LOG = logger<OpenProjectRepository>()
+
+        private val stateChanges = ConcurrentHashMap<String, String>()
+
+        /**
+         * Runs [action] and waits for it. The Tasks plugin calls some repository methods on the EDT (Close Task sets
+         * the status there), where blocking is not allowed: then the work runs in the background under a modal
+         * progress, and its exceptions are rethrown.
+         */
+        @VisibleForTesting
+        internal fun <T> blocking(action: suspend kotlinx.coroutines.CoroutineScope.() -> T): T {
+            if (!ApplicationManager.getApplication().isDispatchThread) return runBlockingMaybeCancellable(action)
+            return ProgressManager.getInstance().runProcessWithProgressSynchronously(
+                ThrowableComputable<T, Exception> { runBlockingMaybeCancellable(action) },
+                OpenProjectBundle.message("task.progress"),
+                true,
+                null,
+            )
+        }
     }
 }

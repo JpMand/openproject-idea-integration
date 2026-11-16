@@ -35,6 +35,11 @@
                                 implementation="com.github.jpmand.openproject.idea.ui.ActiveWorkPackageWidgetFactory"/>
     </extensions>
 
+    <applicationListeners>
+        <listener class="com.github.jpmand.openproject.idea.tasks.CloseTaskListener"
+                  topic="com.intellij.openapi.actionSystem.ex.AnActionListener"/>
+    </applicationListeners>
+
     <actions resource-bundle="messages.OpenProjectBundle">
         <action id="OpenProject.NewListTab" class="com.github.jpmand.openproject.idea.actions.NewWorkPackageListAction"
                 icon="AllIcons.General.Add"/>

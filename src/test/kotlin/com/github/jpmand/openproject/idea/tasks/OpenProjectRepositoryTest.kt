@@ -1,7 +1,9 @@
 package com.github.jpmand.openproject.idea.tasks
 
 import com.github.jpmand.openproject.idea.core.OpenProjectClientPool
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.tasks.TaskRepositoryType
+import com.intellij.tasks.impl.LocalTaskImpl
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.util.xmlb.XmlSerializer
 import com.intellij.openapi.util.JDOMUtil
@@ -80,5 +82,27 @@ class OpenProjectRepositoryTest : BasePlatformTestCase() {
         assertEquals("op.example.com", repository.presentableName)
         repository.projectName = "Demo"
         assertEquals("op.example.com / Demo", repository.presentableName)
+    }
+
+    fun `test blocking calls from the EDT run in the background`() {
+        assertTrue(ApplicationManager.getApplication().isDispatchThread)
+        val ranOnEdt = OpenProjectRepository.blocking { ApplicationManager.getApplication().isDispatchThread }
+        assertFalse(ranOnEdt)
+        try {
+            OpenProjectRepository.blocking<Unit> { error("server down") }
+            fail("expected the failure to be rethrown")
+        } catch (e: IllegalStateException) {
+            assertEquals("server down", e.message)
+        }
+    }
+
+    fun `test closing a task is confirmed with its status`() {
+        val task = LocalTaskImpl("42", "Fix the login")
+        assertEquals("Closed task 42 Fix the login", CloseTaskListener.message(task, null))
+        assertEquals("Closed task 42 Fix the login; its status is now Closed", CloseTaskListener.message(task, "Closed"))
+
+        val repository = type().createRepository() as OpenProjectRepository
+        repository.url = "https://op.example.com"
+        assertNull(repository.takeStateChange("42"))
     }
 }
