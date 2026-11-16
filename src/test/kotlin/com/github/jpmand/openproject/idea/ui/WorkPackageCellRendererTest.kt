@@ -44,9 +44,15 @@ class WorkPackageCellRendererTest : BasePlatformTestCase() {
         columnId: String = "percentageDone",
         selected: Boolean = false,
         renderer: WorkPackageCellRenderer = WorkPackageCellRenderer({ _, _ -> item }, { _, _ -> columnId }, { false }, ::colorOf),
+        hover: Color? = null,
     ): Pair<BufferedImage, JLabel> {
         val table = JBTable(DefaultTableModel(arrayOf(arrayOf<Any>(WorkPackageCells.tableText(item, columnId))), arrayOf(columnId)))
         val label = renderer.getTableCellRendererComponent(table, WorkPackageCells.tableText(item, columnId), selected, false, 0, 0) as JLabel
+        hover?.let {
+            // what JBTable.prepareRenderer does for the hovered (and striped) rows
+            label.isOpaque = true
+            label.background = it
+        }
         label.setSize(200, 20)
         val image = BufferedImage(200, 20, BufferedImage.TYPE_INT_RGB)
         val graphics = image.createGraphics()
@@ -105,31 +111,51 @@ class WorkPackageCellRendererTest : BasePlatformTestCase() {
         assertFalse(WorkPackageCellRenderer.OVERTIME == Color(image.getRGB(150, 10)))
     }
 
-    fun `test status cells use the status color`() {
-        val item = workPackage(null)
-        val (image, label) = paint(item, columnId = "status")
-        assertEquals(statusColor, Color(image.getRGB(2, 2)))
-        assertEquals(statusColor, Color(image.getRGB(195, 17)))
-        assertEquals(StatusColors.textOn(statusColor), label.foreground)
+    private val hoverColor = Color(0x123456)
 
-        val (selected, _) = paint(item, columnId = "status", selected = true)
-        assertEquals(statusColor, Color(selected.getRGB(1, 10)))
-        assertFalse(statusColor == Color(selected.getRGB(150, 10)))
+    /** The badge spans the start of the cell (around the text), not its edges. */
+    private fun assertBadge(image: BufferedImage, color: Color) {
+        assertEquals(color, Color(image.getRGB(6, 10)))
+        assertFalse(color == Color(image.getRGB(1, 10)))
+        assertFalse(color == Color(image.getRGB(195, 10)))
     }
 
-    fun `test type and priority cells use their colors`() {
+    fun `test status cells show a badge in the status color`() {
+        val item = workPackage(null)
+        val (image, label) = paint(item, columnId = "status")
+        assertBadge(image, statusColor)
+        assertEquals(StatusColors.textOn(statusColor), label.foreground)
+
+        // a selected row keeps the badge, on the selection background
+        val (selected, selectedLabel) = paint(item, columnId = "status", selected = true)
+        assertBadge(selected, statusColor)
+        assertEquals(StatusColors.textOn(statusColor), selectedLabel.foreground)
+    }
+
+    fun `test type and priority cells show badges in their colors`() {
         val item = workPackage(null)
         val (type, typeLabel) = paint(item, columnId = "type")
-        assertEquals(typeColor, Color(type.getRGB(2, 2)))
+        assertBadge(type, typeColor)
         assertEquals(Color.WHITE, typeLabel.foreground)
         val (priority, priorityLabel) = paint(item, columnId = "priority")
-        assertEquals(priorityColor, Color(priority.getRGB(2, 2)))
+        assertBadge(priority, priorityColor)
         assertEquals(StatusColors.textOn(priorityColor), priorityLabel.foreground)
-        val (selected, _) = paint(item, columnId = "type", selected = true)
-        assertEquals(typeColor, Color(selected.getRGB(1, 10)))
         // columns without colors stay plain
         val (subject, _) = paint(item, columnId = "subject")
-        assertFalse(Color(subject.getRGB(2, 2)) in setOf(statusColor, typeColor, priorityColor))
+        assertFalse(Color(subject.getRGB(6, 10)) in setOf(statusColor, typeColor, priorityColor))
+    }
+
+    fun `test badges and highlights stay on hovered rows`() {
+        val item = workPackage(null)
+        val (image, _) = paint(item, columnId = "type", hover = hoverColor)
+        assertBadge(image, typeColor)
+        // around the badge, the table's hover background
+        assertEquals(hoverColor, Color(image.getRGB(195, 10)))
+        val (overtime, _) = paint(times("PT3H", "PT2H"), columnId = "spentTime", hover = hoverColor)
+        assertEquals(WorkPackageCellRenderer.OVERTIME, Color(overtime.getRGB(2, 2)))
+        val (progress, _) = paint(workPackage(50), hover = hoverColor)
+        assertTrue(isBar(progress.getRGB(10, 3)))
+        assertEquals(hoverColor, Color(progress.getRGB(190, 3)))
     }
 
     fun `test colors of a colored cell do not leak into the next cell`() {
@@ -140,7 +166,7 @@ class WorkPackageCellRendererTest : BasePlatformTestCase() {
         assertEquals(Color.WHITE, paint(item, columnId = "type", renderer = renderer).second.foreground)
         column = "subject"
         val (image, label) = paint(item, columnId = "subject", renderer = renderer)
-        assertFalse(typeColor == Color(image.getRGB(2, 2)))
+        assertFalse(typeColor == Color(image.getRGB(6, 10)))
         assertFalse(Color.WHITE == label.foreground)
     }
 }

@@ -13,6 +13,7 @@
 - "Spent time" cells turn red when more time was spent than the work (possible overtime); the tooltip shows both
 - Statuses in their OpenProject colors: status cells of the list, the Status filter dropdowns, and a status badge in the work package preview and tab
 - Type and priority cells of the list show their OpenProject colors like status cells, and the Type and Priority filter dropdowns show color swatches
+- Status, type and priority values in the list are shown in rounded badges of their OpenProject colors, on the table's own background: selection, hover and stripes look the same in every theme, and a selected or hovered row keeps its colors
 - Text on status, type and priority colors is dark or white, whichever has the higher contrast ratio (WCAG), so light and mid-tone colors such as the "Normal" priority stay readable
 - The list scrolls horizontally when its columns do not fit; columns keep a minimum width for percentages, durations and dates
 - Work package page header: the parent hierarchy above the subject (each ancestor opens in a tab) with the active task marker, the type as a colored badge that changes the type, the id before the subject, and "Created by" and "Last update on" next to the status
@@ -21,6 +22,7 @@
 - Supports IntelliJ IDEA 2026.1 and later (no until-build); the Plugin Verifier checks the latest 2026.1, 2026.2 and 2026.3 releases
 
 ### Fixed
+- Hovered and striped list rows no longer lose their cell colors (and with them readable text): the table made the renderer opaque, which skipped the painting of colors, progress bars and the overtime highlight
 - The work package page no longer paints the status line over a title that wraps (narrow preview): its rows get their wrapped height in the first layout pass, and a long subject wraps onto more lines instead of being cut off
 - Close Task with a status update no longer fails ("forbidden on EDT"): the status is set in the background under a modal progress, and failures are logged and shown by the Tasks plugin
 - Close Task is confirmed with a notification (and a log entry) naming the work package and its new status; before, closing without a status update looked like nothing happened
