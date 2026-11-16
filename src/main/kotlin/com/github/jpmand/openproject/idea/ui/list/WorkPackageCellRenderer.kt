@@ -17,10 +17,10 @@ import javax.swing.table.DefaultTableCellRenderer
 import kotlin.math.roundToInt
 
 /**
- * Cells of the work package table: the active task's row in bold with a marker, the status in its OpenProject
- * color, percentage columns (`percentageDone`, `derivedPercentageDone`) with a progress bar behind the value, and
- * the spent time in red when it is more than the work (possible overtime). On a selected row the selection color
- * stays and a colored left edge marks status and overtime cells.
+ * Cells of the work package table: the active task's row in bold with a marker, values that have an OpenProject
+ * color (status, type, priority) on that color, percentage columns (`percentageDone`, `derivedPercentageDone`)
+ * with a progress bar behind the value, and the spent time in red when it is more than the work (possible
+ * overtime). On a selected row the selection color stays and a colored left edge marks colored and overtime cells.
  */
 class WorkPackageCellRenderer(
     /** The work package shown in a view row. */
@@ -28,8 +28,8 @@ class WorkPackageCellRenderer(
     /** The column id of a view column. */
     private val columnAt: (table: JTable, column: Int) -> String?,
     private val isActive: (WorkPackage) -> Boolean,
-    /** The color of a work package's status (null: none known). */
-    private val statusColor: (WorkPackage) -> Color? = { null },
+    /** The OpenProject color of a work package's value in a column, e.g. of its status or type (null: none). */
+    private val cellColor: (item: WorkPackage, columnId: String) -> Color? = { _, _ -> null },
 ) : DefaultTableCellRenderer() {
 
     /** Progress of the cell being painted (0..100), null for other columns. */
@@ -54,11 +54,11 @@ class WorkPackageCellRenderer(
         border = JBUI.Borders.empty(0, 6)
         progress = if (item != null && columnId != null && WorkPackageCells.isPercentage(columnId)) WorkPackageCells.percentage(item, columnId) ?: 0 else null
         val overtime = item != null && columnId == WorkPackageCells.SPENT_TIME && WorkPackageCells.isOvertime(item)
-        val status = if (item != null && columnId == "status") statusColor(item) else null
-        val highlight = status ?: if (overtime) OVERTIME else null
+        val color = if (item != null && columnId != null) cellColor(item, columnId) else null
+        val highlight = color ?: if (overtime) OVERTIME else null
         cellBackground = highlight.takeIf { !selected }
-        edge = if (selected) status ?: if (overtime) OVERTIME_EDGE else null else null
-        if (status != null && !selected) foreground = StatusColors.textOn(status)
+        edge = if (selected) color ?: if (overtime) OVERTIME_EDGE else null else null
+        if (color != null && !selected) foreground = StatusColors.textOn(color)
         horizontalAlignment = if (progress != null) SwingConstants.CENTER else SwingConstants.LEADING
         toolTipText = if (overtime && item != null) {
             OpenProjectBundle.message("list.overtime.tooltip", WorkPackageCells.text(item, WorkPackageCells.SPENT_TIME), WorkPackageCells.text(item, WorkPackageCells.WORK))

@@ -3,6 +3,7 @@ package com.github.jpmand.openproject.idea.ui
 import com.github.jpmand.openproject.idea.api.Fixtures
 import com.github.jpmand.openproject.idea.api.OpenProjectApi
 import com.github.jpmand.openproject.idea.api.model.WorkPackage
+import com.github.jpmand.openproject.idea.ui.common.StatusColors
 import com.github.jpmand.openproject.idea.ui.list.WorkPackageCellRenderer
 import com.github.jpmand.openproject.idea.ui.list.WorkPackageCells
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
@@ -27,13 +28,22 @@ class WorkPackageCellRendererTest : BasePlatformTestCase() {
     }
 
     private val statusColor = Color(0x1098AD)
+    private val typeColor = Color(0x1A67A3)
+    private val priorityColor = Color(0xF59F00)
+
+    private fun colorOf(item: WorkPackage, columnId: String): Color? = when (columnId) {
+        "status" -> statusColor
+        "type" -> typeColor
+        "priority" -> priorityColor
+        else -> null
+    }
 
     /** Paints the [columnId] cell of [item] (200 x 20 px) and returns the image. */
     private fun paint(
         item: WorkPackage,
         columnId: String = "percentageDone",
         selected: Boolean = false,
-        renderer: WorkPackageCellRenderer = WorkPackageCellRenderer({ _, _ -> item }, { _, _ -> columnId }, { false }, { statusColor }),
+        renderer: WorkPackageCellRenderer = WorkPackageCellRenderer({ _, _ -> item }, { _, _ -> columnId }, { false }, ::colorOf),
     ): Pair<BufferedImage, JLabel> {
         val table = JBTable(DefaultTableModel(arrayOf(arrayOf<Any>(WorkPackageCells.tableText(item, columnId))), arrayOf(columnId)))
         val label = renderer.getTableCellRendererComponent(table, WorkPackageCells.tableText(item, columnId), selected, false, 0, 0) as JLabel
@@ -107,10 +117,25 @@ class WorkPackageCellRendererTest : BasePlatformTestCase() {
         assertFalse(statusColor == Color(selected.getRGB(150, 10)))
     }
 
+    fun `test type and priority cells use their colors`() {
+        val item = workPackage(null)
+        val (type, typeLabel) = paint(item, columnId = "type")
+        assertEquals(typeColor, Color(type.getRGB(2, 2)))
+        assertEquals(Color.WHITE, typeLabel.foreground)
+        val (priority, priorityLabel) = paint(item, columnId = "priority")
+        assertEquals(priorityColor, Color(priority.getRGB(2, 2)))
+        assertEquals(StatusColors.textOn(priorityColor), priorityLabel.foreground)
+        val (selected, _) = paint(item, columnId = "type", selected = true)
+        assertEquals(typeColor, Color(selected.getRGB(1, 10)))
+        // columns without colors stay plain
+        val (subject, _) = paint(item, columnId = "subject")
+        assertFalse(Color(subject.getRGB(2, 2)) in setOf(statusColor, typeColor, priorityColor))
+    }
+
     fun `test colors of a status cell do not leak into the next cell`() {
         val item = workPackage(null)
         var column = "status"
-        val renderer = WorkPackageCellRenderer({ _, _ -> item }, { _, _ -> column }, { false }, { statusColor })
+        val renderer = WorkPackageCellRenderer({ _, _ -> item }, { _, _ -> column }, { false }, ::colorOf)
         paint(item, columnId = "status", renderer = renderer)
         column = "subject"
         val (image, label) = paint(item, columnId = "subject", renderer = renderer)

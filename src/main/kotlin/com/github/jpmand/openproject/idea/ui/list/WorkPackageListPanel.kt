@@ -57,7 +57,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
@@ -148,11 +150,11 @@ class WorkPackageListPanel(
         itemAt = { table, row -> model.items.getOrNull(table.convertRowIndexToModel(row)) },
         columnAt = { table, column -> columnIds.getOrNull(table.convertColumnIndexToModel(column)) },
         isActive = { it.id == active?.workPackageId },
-        statusColor = { StatusColors.of(it, statusColors) },
+        cellColor = ::cellColor,
     )
 
-    /** Status id -> OpenProject color. */
-    @Volatile private var statusColors: Map<Long, Color> = emptyMap()
+    /** Column -> id of the linked resource -> its OpenProject color: statuses, types and priorities have colors. */
+    @Volatile private var columnColors: Map<String, Map<Long, Color>> = emptyMap()
 
     /** Attribute -> type from the work package schemas of the loaded pages (custom field column widths). */
     private var schemaTypes: Map<String, String> = emptyMap()
@@ -275,7 +277,7 @@ class WorkPackageListPanel(
             val metadataChanged = loadedMetadata !== metadata
             metadata = loadedMetadata
             val page = connection.api.workPackages(query)
-            runCatching { connection.statuses() }.getOrNull()?.let { statusColors = StatusColors.of(it) }
+            columnColors = loadColumnColors(connection)
             withContext(Dispatchers.EDT) {
                 val types = schemaTypes + page.schemas.flatMap { it.fields.values }.associate { it.attribute to it.type }.filterKeys { it !in schemaTypes }
                 val typesChanged = types != schemaTypes
@@ -341,8 +343,8 @@ class WorkPackageListPanel(
         fun named(id: Long, name: String) = ValueOption(id.toString(), name)
         return when (elementType) {
             "Status" -> connection.statuses().map { ValueOption(it.id.toString(), it.name, StatusColors.parse(it.color)) }
-            "Type" -> connection.types().map { named(it.id, it.name) }
-            "Priority" -> connection.priorities().map { named(it.id, it.name) }
+            "Type" -> connection.types().map { ValueOption(it.id.toString(), it.name, StatusColors.parse(it.color)) }
+            "Priority" -> connection.priorities().map { ValueOption(it.id.toString(), it.name, StatusColors.parse(it.color)) }
             "Project" -> connection.projects().map { named(it.id, it.name) }
             "Version" -> connection.cached("versions") { connection.api.versions() }.map { named(it.id, it.name) }
             "User", "Principal", "Group", "PlaceholderUser" ->
@@ -745,8 +747,19 @@ class WorkPackageListPanel(
     @TestOnly
     internal fun preview(): WorkPackageDetailPanel? = preview
 
-    @TestOnly
-    internal fun statusColor(workPackage: WorkPackage): Color? = StatusColors.of(workPackage, statusColors)
+    /** The color of [workPackage]'s value in [columnId] (status, type, priority), when the server defines one. */
+    internal fun cellColor(workPackage: WorkPackage, columnId: String): Color? =
+        columnColors[columnId]?.let { StatusColors.of(workPackage, columnId, it) }
+
+    /** The colors of statuses, types and priorities (cached by the connection); a failing one is left out. */
+    private suspend fun loadColumnColors(connection: OpenProjectConnection): Map<String, Map<Long, Color>> = coroutineScope {
+        val statuses = async { runCatching { StatusColors.of(connection.statuses()) }.getOrNull() }
+        val types = async { runCatching { StatusColors.ofTypes(connection.types()) }.getOrNull() }
+        val priorities = async { runCatching { StatusColors.ofPriorities(connection.priorities()) }.getOrNull() }
+        mapOf("status" to statuses.await(), "type" to types.await(), "priority" to priorities.await())
+            .mapNotNull { (column, colors) -> colors?.let { column to it } }
+            .toMap()
+    }
 
     @TestOnly
     internal fun columnMinimumWidths(): Map<String, Int> =

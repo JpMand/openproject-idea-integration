@@ -1,5 +1,6 @@
 package com.github.jpmand.openproject.idea.ui.common
 
+import com.github.jpmand.openproject.idea.api.model.Priority
 import com.github.jpmand.openproject.idea.api.model.Status
 import com.github.jpmand.openproject.idea.api.model.WorkPackage
 import com.github.jpmand.openproject.idea.api.model.WorkPackageType
@@ -33,6 +34,10 @@ object StatusColors {
 
     /** Status id -> color, for the statuses that have one. */
     fun of(statuses: List<Status>): Map<Long, Color> = statuses.mapNotNull { status -> parse(status.color)?.let { status.id to it } }.toMap()
+
+    /** Priority id -> color, for the priorities that have one. */
+    fun ofPriorities(priorities: List<Priority>): Map<Long, Color> =
+        priorities.mapNotNull { priority -> parse(priority.color)?.let { priority.id to it } }.toMap()
 
     /** Type id -> color, for the types that have one. */
     fun ofTypes(types: List<WorkPackageType>): Map<Long, Color> = types.mapNotNull { type -> parse(type.color)?.let { type.id to it } }.toMap()

@@ -69,7 +69,10 @@ class ToolWindowIntegrationTest : BasePlatformTestCase() {
         val panel = WorkPackageListPanel(project, serverId, null)
         try {
             PlatformTestUtil.waitWithEventsDispatching("list did not load", { panel.loadedWorkPackages().any { it.id == workPackage.id } }, 60)
-            assertNotNull("status color", panel.statusColor(panel.loadedWorkPackages().first { it.id == workPackage.id }))
+            val loaded = panel.loadedWorkPackages().first { it.id == workPackage.id }
+            // seeded statuses, types and priorities have colors
+            listOf("status", "type", "priority").forEach { column -> assertNotNull("$column color", panel.cellColor(loaded, column)) }
+            assertNull(panel.cellColor(loaded, "subject"))
             assertTrue(panel.columnMinimumWidths().getValue("updatedAt") > panel.columnMinimumWidths().getValue("subject"))
             panel.showPreview(workPackage.id)
             val preview = panel.preview()!!
