@@ -16,12 +16,14 @@ import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
+import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.builder.rows
 import com.intellij.ui.dsl.listCellRenderer.textListCellRenderer
+import com.intellij.util.ui.JBUI
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import javax.swing.DefaultComboBoxModel
@@ -40,7 +42,11 @@ class LogTimeDialog(
     private val activityCombo = ComboBox(DefaultComboBoxModel(arrayOf(DEFAULT_ACTIVITY))).apply {
         renderer = textListCellRenderer { it?.title ?: OpenProjectBundle.message("log.time.activity.default") }
     }
-    private val commentArea = JBTextArea(3, 40).apply { lineWrap = true; wrapStyleWord = true }
+    private val commentArea = JBTextArea(3, 40).apply {
+        lineWrap = true;
+        wrapStyleWord = true;
+        border = JBUI.Borders.customLine(JBColor.border(), 1)
+    }
 
     init {
         title = OpenProjectBundle.message("log.time.title", ref.workPackage.presentableId)

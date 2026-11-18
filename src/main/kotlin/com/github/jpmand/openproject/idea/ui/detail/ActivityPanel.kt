@@ -4,6 +4,7 @@ import com.github.jpmand.openproject.idea.OpenProjectBundle
 import com.github.jpmand.openproject.idea.api.model.Activity
 import com.github.jpmand.openproject.idea.ui.common.HtmlView
 import com.github.jpmand.openproject.idea.ui.common.MarkdownField
+import com.intellij.openapi.editor.markup.TextAttributes
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.ui.JBColor
@@ -34,7 +35,13 @@ class ActivityPanel(
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
         isOpaque = false
     }
-    private val composer = MarkdownField(project, "", 4)
+    private val composer = MarkdownField(project, "", 4).apply {
+        // The prompt is the greyed hint of the empty box, kept while it has the focus, instead of a label above it.
+        setPlaceholder(OpenProjectBundle.message("detail.comment.title"))
+        setShowPlaceholderWhenFocused(true)
+        addSettingsProvider { editor -> editor.setPlaceholderAttributes(TextAttributes().apply { foregroundColor = UIUtil.getContextHelpForeground() }) }
+        border = JBUI.Borders.customLine(JBColor.border(), 1)
+    }
     private val internalBox = JBCheckBox(OpenProjectBundle.message("detail.comment.internal")).apply { isVisible = false }
     private val submit = JButton(OpenProjectBundle.message("detail.comment.submit"))
 
@@ -44,7 +51,6 @@ class ActivityPanel(
         add(JPanel(BorderLayout()).apply {
             isOpaque = false
             border = JBUI.Borders.emptyTop(12)
-            add(JBLabel(OpenProjectBundle.message("detail.comment.title")).apply { border = JBUI.Borders.emptyBottom(4) }, BorderLayout.NORTH)
             add(composer, BorderLayout.CENTER)
             // No horizontal gap before the button: it lines up with the comment box.
             add(JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {

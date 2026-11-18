@@ -487,7 +487,9 @@ class WorkPackageDetailPanel(
         val workPackage = controller.details.value?.workPackage ?: return
         editingDescription = true
         descriptionEditLink.isVisible = false
-        val field = MarkdownField(project, workPackage.description?.raw.orEmpty(), 12)
+        val field = MarkdownField(project, workPackage.description?.raw.orEmpty(), 12).apply {
+            border = JBUI.Borders.customLine(JBColor.border(), 1)
+        }
         val preview = html()
         val previewPanel = JPanel(BorderLayout()).apply { isVisible = false; add(preview) }
         val previewLink = ActionLink(OpenProjectBundle.message("detail.description.preview")) {}
