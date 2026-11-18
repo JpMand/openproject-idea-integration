@@ -114,11 +114,15 @@ class StatusBadge(text: String = "", color: Color? = null) : JBLabel(text) {
     }
 }
 
-/** List rows "■ title" with an optional color swatch (statuses in choosers and filter dropdowns). */
-fun <T> swatchListRenderer(text: (T) -> String, color: (T) -> Color?): ListCellRenderer<T> = object : ColoredListCellRenderer<T>() {
-    override fun customizeCellRenderer(list: JList<out T>, value: T?, index: Int, selected: Boolean, hasFocus: Boolean) {
-        if (value == null) return
-        icon = StatusColors.swatch(color(value))
-        append(text(value))
+/**
+ * List rows "■ title" with an optional color swatch (statuses in choosers and filter dropdowns), or another icon
+ * such as a user's avatar.
+ */
+fun <T> swatchListRenderer(text: (T) -> String, color: (T) -> Color?, icon: (T) -> Icon? = { null }): ListCellRenderer<T> =
+    object : ColoredListCellRenderer<T>() {
+        override fun customizeCellRenderer(list: JList<out T>, value: T?, index: Int, selected: Boolean, hasFocus: Boolean) {
+            if (value == null) return
+            this.icon = icon(value) ?: StatusColors.swatch(color(value))
+            append(text(value))
+        }
     }
-}

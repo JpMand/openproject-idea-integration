@@ -14,6 +14,7 @@ import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.Rectangle
 import java.awt.RenderingHints
+import javax.swing.Icon
 import javax.swing.JTable
 import javax.swing.SwingConstants
 import javax.swing.SwingUtilities
@@ -35,6 +36,8 @@ class WorkPackageCellRenderer(
     private val isActive: (WorkPackage) -> Boolean,
     /** The OpenProject color of a work package's value in a column, e.g. of its status or type (null: none). */
     private val cellColor: (item: WorkPackage, columnId: String) -> Color? = { _, _ -> null },
+    /** An icon before the value, e.g. the avatar of the user in an assignee or author column (null: none). */
+    private val valueIcon: (item: WorkPackage, columnId: String) -> Icon? = { _, _ -> null },
 ) : DefaultTableCellRenderer() {
 
     /** Progress of the cell being painted (0..100), null for other columns. */
@@ -57,7 +60,11 @@ class WorkPackageCellRenderer(
         val active = item != null && isActive(item)
         this.selected = selected
         font = if (active) font.deriveFont(Font.BOLD) else font.deriveFont(Font.PLAIN)
-        icon = if (active && table.convertColumnIndexToModel(column) == 0) AllIcons.Vcs.History else null
+        icon = when {
+            active && table.convertColumnIndexToModel(column) == 0 -> AllIcons.Vcs.History
+            item != null && columnId != null -> valueIcon(item, columnId)
+            else -> null
+        }
         progress = if (item != null && columnId != null && WorkPackageCells.isPercentage(columnId)) WorkPackageCells.percentage(item, columnId) ?: 0 else null
         val overtime = item != null && columnId == WorkPackageCells.SPENT_TIME && WorkPackageCells.isOvertime(item)
         badge = if (item != null && columnId != null) cellColor(item, columnId) else null

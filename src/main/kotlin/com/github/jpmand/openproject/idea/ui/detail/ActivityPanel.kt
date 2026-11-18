@@ -16,6 +16,7 @@ import java.awt.BorderLayout
 import java.awt.FlowLayout
 import java.time.Instant
 import javax.swing.BoxLayout
+import javax.swing.Icon
 import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JPanel
@@ -24,6 +25,8 @@ import javax.swing.JPanel
 class ActivityPanel(
     private val project: Project,
     private val html: () -> HtmlView,
+    /** The avatar of the user at an href with a name. */
+    private val avatar: (href: String?, name: String) -> Icon? = { _, _ -> null },
     private val onComment: (text: String, internal: Boolean, done: (Boolean) -> Unit) -> Unit,
 ) : JPanel(BorderLayout()) {
 
@@ -89,7 +92,9 @@ class ActivityPanel(
             if (time.isNotEmpty()) append("&nbsp;&nbsp;<span>").append(time).append("</span>")
             if (activity.internal == true) append("&nbsp;&nbsp;").append(OpenProjectBundle.message("detail.comment.internal.marker"))
         }
-        panel.add(JBLabel("<html>$header</html>"), BorderLayout.NORTH)
+        panel.add(JBLabel("<html>$header</html>", avatar(activity.links.href("user"), user), JBLabel.LEFT).apply {
+            iconTextGap = JBUI.scale(6)
+        }, BorderLayout.NORTH)
         val body = buildString {
             activity.comment?.html?.takeIf { activity.isComment }?.let(::append)
             if (activity.details.isNotEmpty()) {

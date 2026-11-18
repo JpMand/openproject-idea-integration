@@ -9,6 +9,7 @@ import com.github.jpmand.openproject.idea.core.ActiveWorkPackageTracker
 import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
 import com.github.jpmand.openproject.idea.core.describeError
 import com.github.jpmand.openproject.idea.ui.OpenProjectDataKeys
+import com.github.jpmand.openproject.idea.ui.common.Avatars
 import com.github.jpmand.openproject.idea.ui.common.HtmlView
 import com.github.jpmand.openproject.idea.ui.common.MarkdownField
 import com.github.jpmand.openproject.idea.ui.common.ScrollableColumnPanel
@@ -76,6 +77,7 @@ import java.net.URLConnection
 import java.util.concurrent.ConcurrentHashMap
 import javax.swing.Box
 import javax.swing.JButton
+import javax.swing.Icon
 import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.SwingConstants
@@ -140,7 +142,9 @@ class WorkPackageDetailPanel(
     private val descriptionPanel = JPanel(BorderLayout()).apply { isOpaque = false }
 
     // tabs and properties
-    private val activityPanel = ActivityPanel(project, ::html) { text, internal, done -> comment(text, internal, done) }
+    private val activityPanel = ActivityPanel(project, ::html, avatar = { href, name -> avatar(href, name, 20) }) { text, internal, done ->
+        comment(text, internal, done)
+    }
     private val relationsPanel = RelationsPanel(
         onOpen = { id -> OpenProjectToolWindowManager.getInstance(project).openWorkPackage(serverId, id) },
         onDelete = { relation -> perform { controller.deleteRelation(relation) } },
@@ -154,7 +158,7 @@ class WorkPackageDetailPanel(
         onDelete = { attachment -> perform { controller.deleteAttachment(attachment) } },
     )
     private val tabs = JBTabbedPane()
-    private val properties = PropertiesPanel(::chooseValue, ::saveProperty)
+    private val properties = PropertiesPanel(::chooseValue, ::saveProperty) { href, name -> avatar(href, name) }
 
     init {
         add(UiDataProvider.wrapComponent(JPanel(BorderLayout()).apply {
@@ -171,6 +175,8 @@ class WorkPackageDetailPanel(
         tabs.addTab(OpenProjectBundle.message("detail.tab.activity"), scrolled(activityPanel))
         tabs.addTab(OpenProjectBundle.message("detail.tab.relations"), scrolled(relationsPanel))
         tabs.addTab(OpenProjectBundle.message("detail.tab.files"), filesPanel.apply { border = JBUI.Borders.empty(8, 12) })
+        // Avatars arrive after the page is shown.
+        Avatars.getInstance().addListener(this) { content.repaint() }
         reload()
         cs.launch {
             controller.details.collect { details ->
@@ -226,6 +232,7 @@ class WorkPackageDetailPanel(
         showBadge(statusBadge, workPackage.statusTitle, details.statusColor, canChange(details, "status"), "detail.status.change")
         val author = workPackage.authorTitle?.takeIf(String::isNotBlank)
         createdLabel.text = author?.let { OpenProjectBundle.message("detail.created.by", it) }
+        createdLabel.icon = author?.let { avatar(workPackage.links.href("author"), it) }
         createdLabel.isVisible = author != null
         val updated = WorkPackageCells.text(workPackage, "updatedAt").takeIf(String::isNotBlank)
         updatedLabel.text = updated?.let { OpenProjectBundle.message("detail.updated.on", it) }
@@ -440,7 +447,11 @@ class WorkPackageDetailPanel(
                     else -> emptyMap()
                 }
                 withContext(Dispatchers.EDT) {
-                    choose(anchor, if (field?.required == true) options else listOf(unset) + options, color = { it.id?.toLongOrNull()?.let(colors::get) }) { value ->
+                    choose(
+                        anchor, if (field?.required == true) options else listOf(unset) + options,
+                        color = { it.id?.toLongOrNull()?.let(colors::get) },
+                        icon = { option -> option.href?.takeIf(Avatars::isPrincipal)?.let { avatar(it, option.title) } },
+                    ) { value ->
                         perform { controller.update { it.link(attribute, value.href) } }
                     }
                 }
@@ -452,14 +463,25 @@ class WorkPackageDetailPanel(
         perform(onDone = done) { controller.update { it.property(attribute, value) } }
     }
 
-    private fun choose(anchor: JComponent, options: List<HalLink>, color: (HalLink) -> Color? = { null }, onChosen: (HalLink) -> Unit) {
-        JBPopupFactory.getInstance().createPopupChooserBuilder(options)
-            .setRenderer(swatchListRenderer<HalLink>({ it.title ?: it.href.orEmpty() }, color))
+    private fun choose(
+        anchor: JComponent,
+        options: List<HalLink>,
+        color: (HalLink) -> Color? = { null },
+        icon: (HalLink) -> Icon? = { null },
+        onChosen: (HalLink) -> Unit,
+    ) {
+        val popup = JBPopupFactory.getInstance().createPopupChooserBuilder(options)
+            .setRenderer(swatchListRenderer<HalLink>({ it.title ?: it.href.orEmpty() }, color, icon))
             .setNamerForFiltering { it.title.orEmpty() }
             .setItemChosenCallback(onChosen)
             .createPopup()
-            .showUnderneathOf(anchor)
+        Avatars.getInstance().addListener(popup) { popup.content.repaint() }
+        popup.showUnderneathOf(anchor)
     }
+
+    /** The avatar of the user (or group) at [href], [size] pixels wide (unscaled); initials until the image arrives. */
+    private fun avatar(href: String?, name: String?, size: Int = 16): Icon? =
+        Avatars.getInstance().icon(serverId, href, name, size) { controller.connection() }
 
     private fun editDescription() {
         val workPackage = controller.details.value?.workPackage ?: return

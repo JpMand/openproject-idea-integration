@@ -169,4 +169,13 @@ class WorkPackageCellRendererTest : BasePlatformTestCase() {
         assertFalse(typeColor == Color(image.getRGB(6, 10)))
         assertFalse(Color.WHITE == label.foreground)
     }
+
+    fun `test user columns show the user's avatar before the name`() {
+        val item = workPackage(null)
+        val avatar = com.intellij.icons.AllIcons.General.User
+        val renderer = WorkPackageCellRenderer({ _, _ -> item }, { _, _ -> "assignee" }, { false }, ::colorOf) { _, column -> avatar.takeIf { column == "assignee" } }
+        assertSame(avatar, paint(item, columnId = "assignee", renderer = renderer).second.icon)
+        val plain = WorkPackageCellRenderer({ _, _ -> item }, { _, _ -> "subject" }, { false }, ::colorOf) { _, column -> avatar.takeIf { column == "assignee" } }
+        assertNull(paint(item, columnId = "subject", renderer = plain).second.icon)
+    }
 }

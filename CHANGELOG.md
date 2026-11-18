@@ -18,6 +18,8 @@
 - The list scrolls horizontally when its columns do not fit; columns keep a minimum width for percentages, durations and dates
 - Work package page header: the parent hierarchy above the subject (each ancestor opens in a tab) with the active task marker, the type as a colored badge that changes the type, the id before the subject, and "Created by" and "Last update on" next to the status
 - Work package properties in the groups of the OpenProject form, in up to three columns as the width allows; empty attributes are shown, and every writable attribute (per the work package's form schema) can be edited with a dropdown, date (and time) picker, text, number or duration field or checkbox
+- User avatars (the server's avatar: Gravatar or uploaded, else the user's initials on a colored circle) in the list's user columns (Assignee, Author, Accountable, user custom fields), user attributes of the work package page (People, user custom fields), "Created by", the activity and the user choosers
+- Activity: the comment box has a thin border and shows "Add a comment" as its greyed hint while empty, instead of a label above it
 - Activity: the Comment button sits on the left under the comment box; links to attachments (e.g. "File notes.txt added") open the file in an editor like "Open" in the Files tab, instead of the browser
 - Supports IntelliJ IDEA 2026.1 and later (no until-build); the Plugin Verifier checks the latest 2026.1, 2026.2 and 2026.3 releases
 

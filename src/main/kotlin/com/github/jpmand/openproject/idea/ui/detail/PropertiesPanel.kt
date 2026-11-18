@@ -1,6 +1,7 @@
 package com.github.jpmand.openproject.idea.ui.detail
 
 import com.github.jpmand.openproject.idea.OpenProjectBundle
+import com.github.jpmand.openproject.idea.ui.common.Avatars
 import com.github.jpmand.openproject.idea.ui.common.ColumnLayout
 import com.github.jpmand.openproject.idea.ui.common.DatePicker
 import com.github.jpmand.openproject.idea.ui.common.ResponsiveGridLayout
@@ -20,10 +21,12 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import org.jetbrains.annotations.TestOnly
 import java.awt.BorderLayout
+import java.awt.FlowLayout
 import java.awt.event.FocusAdapter
 import java.awt.event.FocusEvent
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
+import javax.swing.Icon
 import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.text.JTextComponent
@@ -38,6 +41,8 @@ class PropertiesPanel(
     private val onChoose: (attribute: String, kind: EditorKind, anchor: JComponent) -> Unit,
     /** Saves a property value; `done` is told whether that succeeded. */
     private val onSave: (attribute: String, value: JsonElement, done: (Boolean) -> Unit) -> Unit,
+    /** The avatar of the user (or group) at an href with a name. */
+    private val avatar: (href: String, name: String?) -> Icon? = { _, _ -> null },
 ) : JPanel() {
 
     private var details: WorkPackageDetails? = null
@@ -81,8 +86,20 @@ class PropertiesPanel(
             font = JBFont.small()
             toolTipText = name
         }, BorderLayout.NORTH)
-        cell.add(value(details, attribute, cell), BorderLayout.CENTER)
+        cell.add(withAvatar(details, attribute, value(details, attribute, cell)), BorderLayout.CENTER)
         return cell
+    }
+
+    /** User attributes (People: assignee, accountable; user custom fields) show the user's avatar before the value. */
+    private fun withAvatar(details: WorkPackageDetails, attribute: String, value: JComponent): JComponent {
+        val link = details.workPackage.links.list(attribute).singleOrNull() ?: return value
+        val icon = link.href?.takeIf(Avatars::isPrincipal)?.let { avatar(it, link.title) } ?: return value
+        if (value is JBLabel) return value.apply { this.icon = icon; iconTextGap = JBUI.scale(6) }
+        return JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
+            isOpaque = false
+            add(JBLabel(icon).apply { border = JBUI.Borders.emptyRight(4) })
+            add(value)
+        }
     }
 
     private fun value(details: WorkPackageDetails, attribute: String, cell: JPanel): JComponent {

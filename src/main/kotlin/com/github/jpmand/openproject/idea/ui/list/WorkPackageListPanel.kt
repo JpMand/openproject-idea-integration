@@ -18,6 +18,7 @@ import com.github.jpmand.openproject.idea.core.connect
 import com.github.jpmand.openproject.idea.core.describeError
 import com.github.jpmand.openproject.idea.ui.OpenProjectDataKeys
 import com.github.jpmand.openproject.idea.ui.WorkPackageRef
+import com.github.jpmand.openproject.idea.ui.common.Avatars
 import com.github.jpmand.openproject.idea.ui.common.StatusColors
 import com.github.jpmand.openproject.idea.ui.common.StatusPanel
 import com.github.jpmand.openproject.idea.ui.detail.WorkPackageDetailPanel
@@ -78,6 +79,7 @@ import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.BoxLayout
 import javax.swing.DefaultComboBoxModel
+import javax.swing.Icon
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
@@ -154,6 +156,7 @@ class WorkPackageListPanel(
         columnAt = { table, column -> columnIds.getOrNull(table.convertColumnIndexToModel(column)) },
         isActive = { it.id == active?.workPackageId },
         cellColor = ::cellColor,
+        valueIcon = ::avatar,
     )
 
     /** Column -> id of the linked resource -> its OpenProject color: statuses, types and priorities have colors. */
@@ -199,6 +202,8 @@ class WorkPackageListPanel(
     private val nextLink = ActionLink(OpenProjectBundle.message("list.page.next")) { viewState.update { it.copy(page = it.page + 1) } }
 
     init {
+        // Avatars arrive after the rows are shown.
+        Avatars.getInstance().addListener(this) { table.repaint() }
         val listArea = JPanel(BorderLayout()).apply {
             add(center, BorderLayout.CENTER)
             add(footer(), BorderLayout.SOUTH)
@@ -766,6 +771,14 @@ class WorkPackageListPanel(
     /** The color of [workPackage]'s value in [columnId] (status, type, priority), when the server defines one. */
     internal fun cellColor(workPackage: WorkPackage, columnId: String): Color? =
         columnColors[columnId]?.let { StatusColors.of(workPackage, columnId, it) }
+
+    /** The avatar of the user (or group) in a single-principal column: assignee, author, accountable, user custom fields. */
+    private fun avatar(workPackage: WorkPackage, columnId: String): Icon? {
+        val link = workPackage.links.list(columnId).singleOrNull() ?: return null
+        val href = link.href?.takeIf(Avatars::isPrincipal) ?: return null
+        val server = serverId ?: return null
+        return Avatars.getInstance().icon(server, href, link.title) { connection ?: connect(project, server).second }
+    }
 
     /** The colors of statuses, types and priorities (cached by the connection); a failing one is left out. */
     private suspend fun loadColumnColors(connection: OpenProjectConnection): Map<String, Map<Long, Color>> = coroutineScope {
