@@ -9,9 +9,11 @@ import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.tasks.config.BaseRepositoryEditor
+import com.intellij.ui.ScrollPaneFactory
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.Consumer
+import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -20,6 +22,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.swing.DefaultComboBoxModel
 import javax.swing.JComponent
+import javax.swing.SwingUtilities
 
 /**
  * Settings of an OpenProject Task Server: URL, API token (the password field) and how tasks are searched.
@@ -55,6 +58,7 @@ class OpenProjectRepositoryEditor(
         installListener(queryCombo)
         installListener(assignedToMeCheckBox)
         installListener(fullTextCheckBox)
+        scrollGeneralTab()
         // Remembers the servers as they were before any change made here.
         OpenProjectServers.getInstance(project).checkForChanges()
         reloadServerData()
@@ -76,6 +80,20 @@ class OpenProjectRepositoryEditor(
             row { cell(assignedToMeCheckBox) }
             row { cell(fullTextCheckBox).comment(OpenProjectBundle.message("repository.editor.full.text.comment")) }
         }
+    }
+
+    /**
+     * Settings | Tools | Tasks | Servers gives the editor only the height left below the list of servers, which cut off
+     * the end of the General tab (the project settings, Use proxy and Test). The tab scrolls instead. Its form sets the
+     * preferred size to (-1, -1), which would make it as small as the visible area: it is computed from the layout again.
+     */
+    private fun scrollGeneralTab() {
+        val index = (0 until myTabbedPane.tabCount).firstOrNull { SwingUtilities.isDescendingFrom(myCustomPanel, myTabbedPane.getComponentAt(it)) } ?: return
+        val general = myTabbedPane.getComponentAt(index) as? JComponent ?: return
+        general.preferredSize = null
+        myTabbedPane.setComponentAt(index, ScrollPaneFactory.createScrollPane(general, true).apply {
+            verticalScrollBar.unitIncrement = JBUI.scale(16)
+        })
     }
 
     override fun apply() {

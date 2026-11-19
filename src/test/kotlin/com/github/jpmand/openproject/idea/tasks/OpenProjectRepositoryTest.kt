@@ -9,11 +9,20 @@ import com.intellij.tasks.impl.LocalTaskImpl
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.util.xmlb.XmlSerializer
 import com.intellij.openapi.util.JDOMUtil
+import com.intellij.ui.components.JBTabbedPane
+import com.intellij.util.ui.UIUtil
 import io.ktor.client.plugins.HttpRequestTimeoutException
+import java.awt.Component
+import java.awt.Container
+import java.awt.Dimension
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.net.http.HttpConnectTimeoutException
+import javax.swing.JButton
+import javax.swing.JComponent
+import javax.swing.JScrollPane
+import javax.swing.SwingUtilities
 
 class OpenProjectRepositoryTest : BasePlatformTestCase() {
 
@@ -81,6 +90,36 @@ class OpenProjectRepositoryTest : BasePlatformTestCase() {
         } finally {
             com.intellij.openapi.util.Disposer.dispose(editor)
         }
+    }
+
+    fun `test the general settings scroll when the editor is shorter than they are`() {
+        val editor = type().createEditor(type().createRepository() as OpenProjectRepository, project) {} as OpenProjectRepositoryEditor
+        try {
+            val component = editor.createComponent()
+            // The height Settings | Tools | Tasks | Servers leaves below the list of servers.
+            component.size = Dimension(600, 265)
+            layOut(component)
+            val tabs = UIUtil.findComponentOfType(component, JBTabbedPane::class.java)!!
+            val general = tabs.getComponentAt(0)
+            assertInstanceOf(general, JScrollPane::class.java)
+            val viewport = (general as JScrollPane).viewport
+            val content = viewport.view as JComponent
+            assertTrue("the settings are taller than the tab", content.height > viewport.height)
+
+            // Test, the last row of the tab, can be scrolled into view.
+            val test = UIUtil.findComponentsOfType(content, JButton::class.java).single { it.text == "Test" }
+            val bounds = SwingUtilities.convertRectangle(test.parent, test.bounds, content)
+            content.scrollRectToVisible(bounds)
+            assertTrue(viewport.viewRect.contains(bounds))
+        } finally {
+            com.intellij.openapi.util.Disposer.dispose(editor)
+        }
+    }
+
+    private fun layOut(component: Component) {
+        if (component !is Container) return
+        component.doLayout()
+        component.components.forEach(::layOut)
     }
 
     fun `test presentable name shows host and project`() {
