@@ -1,7 +1,7 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
     <id>com.github.jpmand.openproject.idea</id>
-    <name>OpenProject</name>
+    <name>OpenProject Work Packages Tracker</name>
     <vendor>jpmand</vendor>
     <description><![CDATA[
         <p>Work with <a href="https://www.openproject.org">OpenProject</a> work packages without leaving the IDE.</p>

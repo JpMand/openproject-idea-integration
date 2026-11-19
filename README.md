@@ -109,5 +109,12 @@ The first start migrates and seeds the database and takes a few minutes. `script
 | `ui` | tool window and its tabs (`ui.toolwindow`), work package list (`ui.list`), work package preview and tab (`ui.detail`), status bar widget |
 | `actions` | menu and toolbar actions, *Log Time* dialog |
 
+## Trademarks
+
+OpenProject and the OpenProject logo are trademarks of OpenProject GmbH. This plugin is an independent project, not
+made, endorsed or supported by OpenProject GmbH. The tool window and task server icons are the
+[official OpenProject icon](https://www.openproject.org/press/), resized and recolored to the IntelliJ Platform icon
+guidelines; they stand for OpenProject servers and their work packages, not for this plugin.
+
 ---
 Plugin based on the [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template).
