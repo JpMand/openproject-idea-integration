@@ -8,6 +8,7 @@ import com.intellij.openapi.project.Project
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
@@ -27,6 +28,12 @@ class OpenProjectProjectScope(val cs: CoroutineScope) {
         fun getInstance(project: Project): OpenProjectProjectScope = project.service()
     }
 }
+
+/**
+ * Cancels the job, like `cancel()`. Compiled against 2026.3, `cancel()` calls `Job.cancel$default`, which the
+ * coroutines library of 2026.1 and 2026.2 does not have (NoSuchMethodError there); `cancel(null)` works on all of them.
+ */
+fun Job.cancelJob() = cancel(null)
 
 class NoServerConfiguredException : Exception(OpenProjectBundle.message("error.no.server"))
 

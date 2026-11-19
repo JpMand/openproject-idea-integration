@@ -7,6 +7,7 @@ import com.github.jpmand.openproject.idea.api.model.Attachment
 import com.github.jpmand.openproject.idea.api.model.WorkPackage
 import com.github.jpmand.openproject.idea.core.ActiveWorkPackageTracker
 import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
+import com.github.jpmand.openproject.idea.core.cancelJob
 import com.github.jpmand.openproject.idea.core.describeError
 import com.github.jpmand.openproject.idea.ui.OpenProjectDataKeys
 import com.github.jpmand.openproject.idea.ui.common.Avatars
@@ -193,7 +194,7 @@ class WorkPackageDetailPanel(
     }
 
     fun reload() {
-        loadJob?.cancel()
+        loadJob?.cancelJob()
         loadJob = cs.launch {
             if (controller.details.value == null) withContext(Dispatchers.EDT) { status.loading() }
             try {

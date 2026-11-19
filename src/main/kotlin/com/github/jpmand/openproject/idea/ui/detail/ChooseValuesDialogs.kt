@@ -4,6 +4,7 @@ import com.github.jpmand.openproject.idea.OpenProjectBundle
 import com.github.jpmand.openproject.idea.api.hal.HalLink
 import com.github.jpmand.openproject.idea.api.model.WorkPackage
 import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
+import com.github.jpmand.openproject.idea.core.cancelJob
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
@@ -95,7 +96,7 @@ class ChooseWorkPackageDialog(
     fun chosen(): HalLink = candidateList.selectedValue
 
     private fun search() {
-        searchJob?.cancel()
+        searchJob?.cancelJob()
         val query = searchField.text.trim()
         searchJob = cs.launch {
             delay(250)

@@ -11,6 +11,7 @@ import com.github.jpmand.openproject.idea.api.model.WorkPackage
 import com.github.jpmand.openproject.idea.core.OpenProjectClientPool
 import com.github.jpmand.openproject.idea.core.OpenProjectConnection
 import com.github.jpmand.openproject.idea.core.TimeEntries
+import com.github.jpmand.openproject.idea.core.cancelJob
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProcessCanceledException
@@ -27,7 +28,6 @@ import com.intellij.util.concurrency.annotations.RequiresBackgroundThread
 import com.intellij.util.xmlb.annotations.Tag
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import org.jetbrains.annotations.VisibleForTesting
 import java.time.Duration
@@ -139,7 +139,7 @@ class OpenProjectRepository : BaseRepository {
         }
 
         override fun cancel() {
-            job?.cancel()
+            job?.cancelJob()
         }
     }
 

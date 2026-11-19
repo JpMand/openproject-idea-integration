@@ -3,6 +3,7 @@ package com.github.jpmand.openproject.idea.ui.detail
 import com.github.jpmand.openproject.idea.OpenProjectBundle
 import com.github.jpmand.openproject.idea.api.model.WorkPackage
 import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
+import com.github.jpmand.openproject.idea.core.cancelJob
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
@@ -88,7 +89,7 @@ class AddRelationDialog(project: Project, private val controller: WorkPackageDet
     )
 
     private fun search() {
-        searchJob?.cancel()
+        searchJob?.cancelJob()
         val query = searchField.text.trim()
         val type = typeCombo.selectedItem as String
         searchJob = cs.launch {
