@@ -12,9 +12,9 @@ import com.github.jpmand.openproject.idea.core.OpenProjectClientPool
 import com.github.jpmand.openproject.idea.core.OpenProjectConnection
 import com.github.jpmand.openproject.idea.core.TimeEntries
 import com.github.jpmand.openproject.idea.core.cancelJob
+import com.github.jpmand.openproject.idea.core.describeError
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.runBlockingMaybeCancellable
 import com.intellij.openapi.util.ThrowableComputable
@@ -30,6 +30,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import org.jetbrains.annotations.VisibleForTesting
+import java.io.IOException
 import java.time.Duration
 import java.time.LocalDate
 import java.util.concurrent.ConcurrentHashMap
@@ -143,22 +144,48 @@ class OpenProjectRepository : BaseRepository {
         }
     }
 
-    override fun getAvailableTaskStates(task: Task): Set<CustomTaskState> = blocking {
-        val connection = connection()
-        val workPackage = connection.api.workPackage(task.id.toLong())
-        val form = connection.api.workPackageForm(workPackage, WorkPackagePatch(workPackage.lockVersion))
-        form.schema["status"]?.allowedOptions.orEmpty()
+    /**
+     * The statuses the workflow allows for the work package (its current one included), offered by "Update issue state"
+     * of Open Task and Close Task. Without permission to change the status (no edit permission, or the status is not
+     * writable for the user) there are none, so the status is left alone. Tasks loads them in the background and
+     * reports any exception as an IDE error: a failure (e.g. the server cannot be reached) is only logged.
+     */
+    override fun getAvailableTaskStates(task: Task): Set<CustomTaskState> = try {
+        blocking { availableStates(task) }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        LOG.warn("Could not load the statuses of #${task.id}: ${describeError(e)}", e.takeUnless { it is IOException || it is OpenProjectApiException })
+        emptySet()
+    }
+
+    private suspend fun availableStates(task: Task): Set<CustomTaskState> {
+        val api = connection().api
+        val workPackage = api.workPackage(task.id.toLong())
+        val form = try {
+            api.workPackageForm(workPackage, WorkPackagePatch(workPackage.lockVersion))
+        } catch (e: OpenProjectApiException) {
+            if (!e.isMissingPermission && !e.isNotFound) throw e
+            LOG.info("No permission to change #${task.id}: ${e.message}")
+            return emptySet()
+        }
+        val status = form.schema["status"]?.takeIf { it.writable } ?: return emptySet()
+        return status.allowedOptions
             .mapNotNull { option -> option.href?.let { CustomTaskState(it, option.title ?: it.substringAfterLast('/')) } }
             .toSet()
     }
 
-    /** Called by Close Task (on the EDT) and Open Task; Close Task shows a failure in an error dialog. */
+    /**
+     * Called by Open Task and Close Task on the EDT, under a modal progress (see [blocking]); they show a failure in an
+     * error dialog and go on opening or closing the task. A work package that has the status already is left as it is.
+     */
     override fun setTaskState(task: Task, state: CustomTaskState) {
         try {
             blocking {
                 val api = connection().api
                 suspend fun update() {
                     val fresh = api.workPackage(task.id.toLong())
+                    if (statusId(fresh.links.href("status")) == statusId(state.id)) return
                     api.updateWorkPackage(fresh, WorkPackagePatch(fresh.lockVersion).link("status", state.id))
                 }
                 try {
@@ -168,13 +195,27 @@ class OpenProjectRepository : BaseRepository {
                     if (e.isConflict) update() else throw e
                 }
             }
+        } catch (e: CancellationException) {
+            if (!ApplicationManager.getApplication().isDispatchThread) throw e
+            // The user cancelled the progress (e.g. a slow server); tell why the status stays as it was.
+            throw TaskStateException(OpenProjectBundle.message("task.state.cancelled", task.presentableId, state.presentableName), e)
+        } catch (e: OpenProjectApiException) {
+            LOG.info("OpenProject did not set the status of #${task.id} to ${state.presentableName}: ${e.message}")
+            // Not allowed: no permission, or the workflow of the user's roles has no such transition.
+            if (e.isMissingPermission || e.isConstraintViolation) {
+                throw TaskStateException(OpenProjectBundle.message("task.state.denied", task.presentableId, state.presentableName, e.message.orEmpty()), e)
+            }
+            throw e
         } catch (e: Exception) {
-            if (e !is ProcessCanceledException && e !is CancellationException) LOG.warn("Could not set the status of #${task.id} to ${state.presentableName}", e)
+            LOG.warn("Could not set the status of #${task.id} to ${state.presentableName}: ${describeError(e)}", e.takeUnless { it is IOException })
             throw e
         }
         LOG.info("Status of #${task.id} set to ${state.presentableName}")
         stateChanges[stateKey(task.id)] = state.presentableName
     }
+
+    /** A status update that was refused or cancelled; Tasks shows [message] to the user. */
+    class TaskStateException(message: String, cause: Throwable) : Exception(message, cause)
 
     /** The status [setTaskState] last set for [taskId] (e.g. by Close Task), forgotten once taken. */
     fun takeStateChange(taskId: String): String? = stateChanges.remove(stateKey(taskId))
@@ -223,6 +264,9 @@ class OpenProjectRepository : BaseRepository {
         private val LOG = logger<OpenProjectRepository>()
 
         private val stateChanges = ConcurrentHashMap<String, String>()
+
+        /** "7" for a status link (relative or absolute). */
+        private fun statusId(href: String?): String? = href?.substringAfterLast("/statuses/", "")?.takeIf { it.isNotEmpty() }
 
         /**
          * Runs [action] and waits for it. The Tasks plugin calls some repository methods on the EDT (Close Task sets
