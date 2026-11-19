@@ -5,7 +5,10 @@ import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.java.Java
+import io.ktor.client.network.sockets.ConnectTimeoutException
+import io.ktor.client.network.sockets.SocketTimeoutException
 import io.ktor.client.plugins.HttpRequestRetry
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.UserAgent
 import io.ktor.client.plugins.api.createClientPlugin
@@ -19,6 +22,7 @@ import io.ktor.http.Url
 import io.ktor.serialization.kotlinx.json.json
 import java.io.IOException
 import java.net.Authenticator
+import java.net.http.HttpTimeoutException
 import java.time.Duration
 import java.util.Base64
 import javax.net.ssl.SSLContext
@@ -52,6 +56,11 @@ object OpenProjectUrls {
 object OpenProjectHttpClient {
     private val LOG = IdeLogger.getInstance(OpenProjectHttpClient::class.java)
 
+    /** The server did not accept the connection or answer within the configured timeouts. */
+    fun isTimeout(error: Throwable): Boolean =
+        error is HttpRequestTimeoutException || error is ConnectTimeoutException || error is SocketTimeoutException ||
+            error is java.net.SocketTimeoutException || error is HttpTimeoutException
+
     /** Creates a client on the JDK HTTP engine (or [engine], for tests). */
     fun create(config: OpenProjectClientConfig, engine: HttpClientEngine? = null): HttpClient {
         val common: HttpClientConfig<*>.() -> Unit = { installCommon(config) }
@@ -84,7 +93,8 @@ object OpenProjectHttpClient {
         }
         install(HttpRequestRetry) {
             retryIf(maxRetries = 2) { request, response -> request.method == HttpMethod.Get && response.status.value >= 500 }
-            retryOnExceptionIf(maxRetries = 2) { request, cause -> request.method == HttpMethod.Get && cause is IOException }
+            // A server that did not answer in time is not asked again: that would only multiply the wait.
+            retryOnExceptionIf(maxRetries = 2) { request, cause -> request.method == HttpMethod.Get && cause is IOException && !isTimeout(cause) }
             exponentialDelay()
         }
         install(UserAgent) {

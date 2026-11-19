@@ -2,6 +2,7 @@ package com.github.jpmand.openproject.idea.core
 
 import com.github.jpmand.openproject.idea.OpenProjectBundle
 import com.github.jpmand.openproject.idea.api.OpenProjectApiException
+import com.github.jpmand.openproject.idea.api.OpenProjectHttpClient
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
@@ -48,11 +49,12 @@ fun needsServerSettings(error: Throwable): Boolean =
     error is NoServerConfiguredException || (error is OpenProjectApiException && error.isUnauthorized)
 
 /** A message for the user explaining why an OpenProject call failed. */
-fun describeError(error: Throwable): String = when (error) {
-    is OpenProjectApiException -> error.message ?: OpenProjectBundle.message("error.unknown")
-    is NoServerConfiguredException -> error.message!!
-    is UnknownHostException, is ConnectException -> OpenProjectBundle.message("error.unreachable", error.message.orEmpty())
-    is SSLException -> OpenProjectBundle.message("error.ssl", error.message.orEmpty())
-    is IOException -> OpenProjectBundle.message("error.io", error.message ?: error.javaClass.simpleName)
+fun describeError(error: Throwable): String = when {
+    error is OpenProjectApiException -> error.message ?: OpenProjectBundle.message("error.unknown")
+    error is NoServerConfiguredException -> error.message!!
+    error is UnknownHostException || error is ConnectException -> OpenProjectBundle.message("error.unreachable", error.message.orEmpty())
+    OpenProjectHttpClient.isTimeout(error) -> OpenProjectBundle.message("error.timeout")
+    error is SSLException -> OpenProjectBundle.message("error.ssl", error.message.orEmpty())
+    error is IOException -> OpenProjectBundle.message("error.io", error.message ?: error.javaClass.simpleName)
     else -> error.message ?: error.javaClass.simpleName
 }

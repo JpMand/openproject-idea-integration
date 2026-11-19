@@ -21,6 +21,7 @@ import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.FlowLayout
@@ -170,8 +171,11 @@ class FilterBar(
             val options = runCatching { loadOptions(meta, filter.operator, element) }.getOrNull() ?: return@launch
             withContext(Dispatchers.EDT) { link.text = describe(filter.values, options) }
         }
+        var choosing: Job? = null
         link.addActionListener {
-            cs.launch {
+            // A slow server must not stack popups.
+            if (choosing?.isActive == true) return@addActionListener
+            choosing = cs.launch {
                 val options = try {
                     loadOptions(meta, filter.operator, element)
                 } catch (e: CancellationException) {

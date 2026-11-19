@@ -88,7 +88,9 @@ class WorkPackageDetailController(private val project: Project, private val serv
     @Volatile
     private var connection: OpenProjectConnection? = null
 
-    suspend fun connection(): OpenProjectConnection = connection ?: connect(project, serverId).second.also { connection = it }
+    /** The connection of the work package's server; a new one when the token changed since it was obtained. */
+    suspend fun connection(): OpenProjectConnection =
+        connection?.takeUnless { it.isClosed } ?: connect(project, serverId).second.also { connection = it }
 
     suspend fun load(): WorkPackageDetails = mutex.withLock { loadUnlocked() }
 

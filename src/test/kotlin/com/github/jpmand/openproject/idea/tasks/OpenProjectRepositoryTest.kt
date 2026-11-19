@@ -1,12 +1,19 @@
 package com.github.jpmand.openproject.idea.tasks
 
+import com.github.jpmand.openproject.idea.api.OpenProjectHttpClient
 import com.github.jpmand.openproject.idea.core.OpenProjectClientPool
+import com.github.jpmand.openproject.idea.core.describeError
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.tasks.TaskRepositoryType
 import com.intellij.tasks.impl.LocalTaskImpl
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.util.xmlb.XmlSerializer
 import com.intellij.openapi.util.JDOMUtil
+import io.ktor.client.plugins.HttpRequestTimeoutException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.net.http.HttpConnectTimeoutException
 
 class OpenProjectRepositoryTest : BasePlatformTestCase() {
 
@@ -94,6 +101,16 @@ class OpenProjectRepositoryTest : BasePlatformTestCase() {
         } catch (e: IllegalStateException) {
             assertEquals("server down", e.message)
         }
+    }
+
+    fun `test a server that does not answer in time is told apart from one that cannot be reached`() {
+        val timeout = HttpRequestTimeoutException("https://op.example.com/api/v3/work_packages", 60_000)
+        assertTrue(OpenProjectHttpClient.isTimeout(timeout))
+        assertTrue(OpenProjectHttpClient.isTimeout(SocketTimeoutException("Read timed out")))
+        assertTrue(OpenProjectHttpClient.isTimeout(HttpConnectTimeoutException("HTTP connect timed out")))
+        assertFalse(OpenProjectHttpClient.isTimeout(ConnectException("Connection refused")))
+        assertEquals("OpenProject did not answer in time. Check the connection and try again.", describeError(timeout))
+        assertEquals("Cannot reach the OpenProject server (op.example.com).", describeError(UnknownHostException("op.example.com")))
     }
 
     fun `test closing a task is confirmed with its status`() {

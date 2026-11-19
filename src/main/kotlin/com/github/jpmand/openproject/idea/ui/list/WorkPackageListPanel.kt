@@ -60,12 +60,15 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -198,6 +201,8 @@ class WorkPackageListPanel(
     private var preview: WorkPackageDetailPanel? = null
     private var restoringSelection = false
     private val splitter = OnePixelSplitter(false, "OpenProject.List.Preview", 0.55f)
+    /** Refresh, retry and server changes: the current query is loaded again (the newest load wins, see init). */
+    private val reloadRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     private val previousLink = ActionLink(OpenProjectBundle.message("list.page.previous")) { viewState.update { it.copy(page = (it.page - 1).coerceAtLeast(1)) } }
     private val nextLink = ActionLink(OpenProjectBundle.message("list.page.next")) { viewState.update { it.copy(page = it.page + 1) } }
 
@@ -235,7 +240,11 @@ class WorkPackageListPanel(
         status.loading()
 
         cs.launch {
-            viewState.map(ListQueries::toQuery).distinctUntilChanged().debounce(250).collectLatest { query -> load(query) }
+            // One load at a time: a newer query or reload cancels a pending one, so a slow answer never replaces a newer one.
+            merge(
+                viewState.map(ListQueries::toQuery).distinctUntilChanged().debounce(250),
+                reloadRequests.map { ListQueries.toQuery(viewState.value) },
+            ).collectLatest { query -> load(query) }
         }
         cs.launch(Dispatchers.EDT) {
             viewState.collect { state ->
@@ -266,10 +275,11 @@ class WorkPackageListPanel(
 
     private fun projectId(): Long = (server ?: OpenProjectServers.getInstance(project).find(serverId))?.repository?.projectId ?: 0
 
+    /** Loads the list again (Refresh, Retry). */
     fun reload() {
         adoptConfiguredServer()
         connection?.invalidate()
-        cs.launch { load(ListQueries.toQuery(viewState.value)) }
+        reloadRequests.tryEmit(Unit)
     }
 
     // ---- loading ----
@@ -346,8 +356,12 @@ class WorkPackageListPanel(
     private suspend fun loadResourceOptions(elementType: String): List<ValueOption> =
         loadOptions(FilterMeta(elementType, elementType, emptyMap()), "=", elementType)
 
+    /** The connection of the shown server; a new one when the token changed since it was obtained. */
+    private suspend fun currentConnection(): OpenProjectConnection =
+        connection?.takeUnless { it.isClosed } ?: connect(project, serverId).second
+
     private suspend fun loadOptions(filter: FilterMeta, operator: String, elementType: String): List<ValueOption> {
-        val connection = connection ?: connect(project, serverId).second
+        val connection = currentConnection()
         fun named(id: Long, name: String) = ValueOption(id.toString(), name)
         return when (elementType) {
             "Status" -> connection.statuses().map { ValueOption(it.id.toString(), it.name, StatusColors.parse(it.color)) }
@@ -395,8 +409,7 @@ class WorkPackageListPanel(
         }
         cs.launch {
             try {
-                val connection = connection ?: connect(project, serverId).second
-                val query = connection.api.query(view.id)
+                val query = currentConnection().api.query(view.id)
                 val columns = query.links.list("columns").mapNotNull { it.id }
                 val sortBy = query.links.list("sortBy").mapNotNull { it.id }.map { SortSpec(it.substringBeforeLast('-'), !it.endsWith("-desc")) }
                 viewState.update {
@@ -777,7 +790,7 @@ class WorkPackageListPanel(
         val link = workPackage.links.list(columnId).singleOrNull() ?: return null
         val href = link.href?.takeIf(Avatars::isPrincipal) ?: return null
         val server = serverId ?: return null
-        return Avatars.getInstance().icon(server, href, link.title) { connection ?: connect(project, server).second }
+        return Avatars.getInstance().icon(server, href, link.title) { connection?.takeUnless { it.isClosed } ?: connect(project, server).second }
     }
 
     /** The colors of statuses, types and priorities (cached by the connection); a failing one is left out. */

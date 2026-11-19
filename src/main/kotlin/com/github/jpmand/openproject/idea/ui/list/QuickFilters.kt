@@ -13,6 +13,7 @@ import com.intellij.util.ui.UIUtil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.FlowLayout
@@ -80,6 +81,9 @@ class QuickFilterLink(
     private var current: List<FilterSpec> = emptyList()
     private var options: List<ValueOption>? = null
 
+    /** Loading the values to choose from; further clicks wait for it (a slow server must not stack popups). */
+    private var choosing: Job? = null
+
     init {
         isOpaque = false
         add(JBLabel(def.label).apply {
@@ -124,7 +128,8 @@ class QuickFilterLink(
     }.let { if (it.length > 40) it.take(37) + "…" else it }
 
     private fun choose() {
-        cs.launch {
+        if (choosing?.isActive == true) return
+        choosing = cs.launch {
             val loaded = try {
                 loadOptions(def.elementType)
             } catch (e: CancellationException) {

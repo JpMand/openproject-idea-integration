@@ -25,6 +25,11 @@ class OpenProjectConnection(val api: OpenProjectApi) : AutoCloseable {
 
     val baseUrl: String get() = api.baseUrl
 
+    /** Closed by the pool when the server's token changed (or the IDE closes): a new connection must be obtained. */
+    @Volatile
+    var isClosed: Boolean = false
+        private set
+
     suspend fun me(): Principal = cached("me", 60.minutes) { api.me() }
 
     suspend fun configuration(): Configuration = cached("configuration", 60.minutes) { api.configuration() }
@@ -54,6 +59,7 @@ class OpenProjectConnection(val api: OpenProjectApi) : AutoCloseable {
     }
 
     override fun close() {
+        isClosed = true
         cache.clear()
         api.close()
     }

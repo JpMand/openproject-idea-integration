@@ -22,6 +22,7 @@ import com.intellij.openapi.application.EDT
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
+import com.intellij.platform.ide.progress.withBackgroundProgress
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -84,11 +85,15 @@ class LogTimeAction : DumbAwareAction(AllIcons.Vcs.History) {
         val contextRef = e.getData(OpenProjectDataKeys.WORK_PACKAGE)
         val refresher = e.getData(OpenProjectDataKeys.REFRESHER)
         val active = ActiveWorkPackageTracker.getInstance(project).active.value
+        val serverId = contextRef?.server?.id ?: active?.serverId ?: return
+        val workPackageId = contextRef?.workPackage?.id ?: active?.workPackageId ?: return
         OpenProjectProjectScope.getInstance(project).cs.launch {
             try {
-                val serverId = contextRef?.server?.id ?: active?.serverId ?: return@launch
-                val (server, connection) = connect(project, serverId)
-                val workPackage = connection.api.workPackage(contextRef?.workPackage?.id ?: active!!.workPackageId)
+                // The latest work package (time tracking may have been switched off); visible and cancellable when slow.
+                val (server, connection, workPackage) = withBackgroundProgress(project, OpenProjectBundle.message("log.time.loading")) {
+                    val (server, connection) = connect(project, serverId)
+                    Triple(server, connection, connection.api.workPackage(workPackageId))
+                }
                 withContext(Dispatchers.EDT) {
                     if (!TimeEntries.canLogTime(workPackage)) {
                         notifyError(project, OpenProjectBundle.message("time.tracking.unavailable", workPackage.presentableId))

@@ -1,0 +1,77 @@
+package com.github.jpmand.openproject.idea.ui
+
+import com.github.jpmand.openproject.idea.api.MockOpenProject
+import com.github.jpmand.openproject.idea.api.MockOpenProject.Companion.collection
+import com.github.jpmand.openproject.idea.api.MockOpenProject.Companion.hal
+import com.github.jpmand.openproject.idea.api.MockOpenProject.Companion.notFound
+import com.github.jpmand.openproject.idea.api.MockOpenProject.Companion.workPackage
+import com.github.jpmand.openproject.idea.tasks.OpenProjectRepository
+import com.github.jpmand.openproject.idea.tasks.OpenProjectRepositoryType
+import com.github.jpmand.openproject.idea.ui.list.WorkPackageListPanel
+import com.github.jpmand.openproject.idea.ui.list.WorkPackageListViews
+import com.intellij.openapi.util.Disposer
+import com.intellij.tasks.TaskManager
+import com.intellij.tasks.TaskRepositoryType
+import com.intellij.tasks.impl.TaskManagerImpl
+import com.intellij.testFramework.PlatformTestUtil
+import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import kotlinx.coroutines.delay
+import java.util.concurrent.atomic.AtomicInteger
+
+/** A slow server must not leave the work package list showing outdated rows. */
+class SlowServerTest : BasePlatformTestCase() {
+
+    private lateinit var server: MockOpenProject
+
+    override fun setUp() {
+        super.setUp()
+        server = MockOpenProject(testRootDisposable)
+        val type = TaskRepositoryType.getRepositoryTypes().filterIsInstance<OpenProjectRepositoryType>().single()
+        val repository = (type.createRepository() as OpenProjectRepository).apply {
+            url = SERVER
+            password = "token"
+        }
+        (TaskManager.getManager(project) as TaskManagerImpl).setRepositories(listOf(repository))
+    }
+
+    override fun tearDown() {
+        try {
+            (TaskManager.getManager(project) as TaskManagerImpl).setRepositories(emptyList<OpenProjectRepository>())
+            // Lists store their view per server in the (shared) test project.
+            WorkPackageListViews.getInstance(project).remove(SERVER)
+        } finally {
+            super.tearDown()
+        }
+    }
+
+    private fun waitFor(what: String, condition: () -> Boolean) = PlatformTestUtil.waitWithEventsDispatching(what, condition, 10)
+
+    fun `test a slow answer does not replace the newer one`() {
+        val calls = AtomicInteger()
+        server.handler = { request ->
+            when {
+                request.url.encodedPath != "/api/v3/work_packages" -> notFound()
+                calls.incrementAndGet() == 1 -> {
+                    delay(1500)
+                    hal(collection(workPackage(1, "slow and old")))
+                }
+                else -> hal(collection(workPackage(2, "new")))
+            }
+        }
+        val list = WorkPackageListPanel(project, null, null)
+        try {
+            waitFor("first request") { calls.get() == 1 }
+            list.reload()
+            waitFor("newer rows") { list.loadedWorkPackages().map { it.id } == listOf(2L) }
+            val slowAnswerDue = System.currentTimeMillis() + 2500
+            waitFor("slow answer due") { System.currentTimeMillis() > slowAnswerDue }
+            assertEquals(listOf(2L), list.loadedWorkPackages().map { it.id })
+        } finally {
+            Disposer.dispose(list)
+        }
+    }
+
+    private companion object {
+        const val SERVER = "https://slow.example.com"
+    }
+}

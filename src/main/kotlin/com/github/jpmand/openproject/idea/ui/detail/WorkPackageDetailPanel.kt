@@ -59,6 +59,7 @@ import com.intellij.util.ui.WrapLayout
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -108,6 +109,7 @@ class WorkPackageDetailPanel(
     val controller = WorkPackageDetailController(project, serverId, workPackageId)
 
     private var loadJob: Job? = null
+    private var choosing = false
     private var editingDescription = false
     private var internalCommentsAvailable = false
     private val imageDirectory by lazy { FileUtil.createTempDirectory("openproject-images", null, true) }
@@ -390,7 +392,7 @@ class WorkPackageDetailPanel(
     }
 
     private fun chooseStatus(anchor: JComponent) {
-        perform {
+        chooseOnce {
             val statuses = controller.allowedStatuses()
             val colors = controller.details.value?.statusColors.orEmpty()
             withContext(Dispatchers.EDT) {
@@ -402,7 +404,7 @@ class WorkPackageDetailPanel(
     }
 
     private fun chooseType(anchor: JComponent) {
-        perform {
+        chooseOnce {
             val types = controller.allowedTypes()
             val colors = controller.details.value?.typeColors.orEmpty()
             withContext(Dispatchers.EDT) {
@@ -429,7 +431,7 @@ class WorkPackageDetailPanel(
                     perform { controller.update { it.link(attribute, chosen.href) } }
                 }
             }
-            EditorKind.LINKS -> perform {
+            EditorKind.LINKS -> chooseOnce {
                 val options = controller.allowedOptions(attribute)
                 withContext(Dispatchers.EDT) {
                     val selected = details.workPackage.links.list(attribute).mapNotNull { it.href }.toSet()
@@ -440,7 +442,7 @@ class WorkPackageDetailPanel(
                     }
                 }
             }
-            else -> perform {
+            else -> chooseOnce {
                 val options = controller.allowedOptions(attribute)
                 val colors = when (attribute) {
                     "status" -> details.statusColors
@@ -592,25 +594,38 @@ class WorkPackageDetailPanel(
 
     // ---- helpers ----
 
-    /** Runs [action] in the background, reporting failures; a conflicting edit offers to reapply it. */
+    /**
+     * Runs [action] in the background, reporting failures; a conflicting edit offers to reapply it. [onDone] is always
+     * told the outcome (also when cancelled), so that buttons disabled meanwhile are enabled again.
+     */
     private fun perform(onDone: ((Boolean) -> Unit)? = null, action: suspend () -> Unit) {
         cs.launch {
-            val success = try {
+            var success = false
+            try {
                 action()
-                true
+                success = true
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ConcurrentChangeException) {
                 withContext(Dispatchers.EDT) {
                     notify(OpenProjectBundle.message("detail.conflict"), NotificationType.WARNING, retry = { perform(onDone, action) })
                 }
-                false
             } catch (e: Exception) {
                 withContext(Dispatchers.EDT) { notifyError(project, describeError(e), e) }
-                false
+            } finally {
+                if (onDone != null) withContext(Dispatchers.EDT + NonCancellable) { onDone(success) }
             }
-            if (onDone != null) withContext(Dispatchers.EDT) { onDone(success) }
         }
+    }
+
+    /**
+     * Loads the choices of a dropdown and shows them via [action]; further clicks are ignored until then, so that a slow
+     * server does not end in a pile of popups.
+     */
+    private fun chooseOnce(action: suspend () -> Unit) {
+        if (choosing) return
+        choosing = true
+        perform(onDone = { choosing = false }, action = action)
     }
 
     private fun notify(message: String, type: NotificationType, retry: (() -> Unit)? = null) {
