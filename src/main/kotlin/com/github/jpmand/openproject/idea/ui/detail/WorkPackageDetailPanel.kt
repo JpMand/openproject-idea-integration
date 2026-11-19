@@ -539,7 +539,7 @@ class WorkPackageDetailPanel(
     }
 
     private fun addRelation() {
-        val dialog = AddRelationDialog(project, controller)
+        val dialog = AddRelationDialog(project, controller::relationCandidates)
         if (!dialog.showAndGet()) return
         val result = dialog.result()
         perform { controller.addRelation(result.type, result.target, result.description, result.lag) }

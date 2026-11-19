@@ -1,16 +1,22 @@
 package com.github.jpmand.openproject.idea.tasks
 
 import com.github.jpmand.openproject.idea.OpenProjectBundle
-import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ModalityState
+import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
+import com.github.jpmand.openproject.idea.core.cancelJob
+import com.github.jpmand.openproject.idea.ui.common.DIALOG_UI
 import com.intellij.openapi.diagnostic.thisLogger
-import com.intellij.openapi.progress.runBlockingMaybeCancellable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.tasks.config.BaseRepositoryEditor
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.Consumer
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.swing.DefaultComboBoxModel
 import javax.swing.JComponent
 
@@ -34,8 +40,8 @@ class OpenProjectRepositoryEditor(
     private lateinit var assignedToMeCheckBox: JBCheckBox
     private lateinit var fullTextCheckBox: JBCheckBox
 
-    @Volatile
-    private var disposed = false
+    private val cs = OpenProjectProjectScope.getInstance(project).childScope("OpenProjectRepositoryEditor")
+    private var loadJob: Job? = null
 
     init {
         myUsernameLabel.isVisible = false
@@ -87,26 +93,35 @@ class OpenProjectRepositoryEditor(
     }
 
     override fun dispose() {
-        disposed = true
+        cs.cancel()
         super.dispose()
     }
 
-    /** Loads projects and saved queries in the background; failures just leave the combos as they are. */
+    /**
+     * Loads projects and saved queries in the background; failures just leave the combos as they are. A newer load
+     * (after another successful connection test) replaces a pending one, and closing the settings cancels it.
+     */
     private fun reloadServerData() {
         val repository = myRepository.clone()
-        ApplicationManager.getApplication().executeOnPooledThread {
-            if (!repository.isConfigured) return@executeOnPooledThread
-            val loaded = runCatching {
-                runBlockingMaybeCancellable {
+        loadJob?.cancelJob()
+        loadJob = cs.launch {
+            val loaded = try {
+                withContext(Dispatchers.IO) {
+                    if (!repository.isConfigured) return@withContext null
                     val api = repository.connection().api
                     api.projects().map { Item(it.id, it.name) } to api.queries().filter { it.id != null }.map { Item(it.id!!, it.name.orEmpty()) }
                 }
-            }.onFailure { thisLogger().info("Could not load OpenProject projects and queries", it) }.getOrNull() ?: return@executeOnPooledThread
-            ApplicationManager.getApplication().invokeLater({
-                if (disposed) return@invokeLater
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                thisLogger().info("Could not load OpenProject projects and queries", e)
+                null
+            } ?: return@launch
+            // The settings dialog is modal.
+            withContext(DIALOG_UI) {
                 fill(projectCombo, listOf(allProjects()) + loaded.first, myRepository.projectId)
                 fill(queryCombo, listOf(noQuery()) + loaded.second, myRepository.savedQueryId)
-            }, ModalityState.any())
+            }
         }
     }
 

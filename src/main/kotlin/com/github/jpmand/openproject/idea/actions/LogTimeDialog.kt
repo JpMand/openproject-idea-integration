@@ -4,17 +4,18 @@ import com.github.jpmand.openproject.idea.OpenProjectBundle
 import com.github.jpmand.openproject.idea.api.Durations
 import com.github.jpmand.openproject.idea.api.hal.HalLink
 import com.github.jpmand.openproject.idea.core.OpenProjectConnection
+import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
 import com.github.jpmand.openproject.idea.core.TimeEntries
 import com.github.jpmand.openproject.idea.core.TimeEntryValidationException
 import com.github.jpmand.openproject.idea.core.describeError
 import com.github.jpmand.openproject.idea.ui.WorkPackageRef
-import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.progress.runBlockingMaybeCancellable
+import com.github.jpmand.openproject.idea.ui.common.DIALOG_UI
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.ValidationInfo
+import com.intellij.openapi.util.Disposer
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBTextArea
@@ -24,6 +25,10 @@ import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.builder.rows
 import com.intellij.ui.dsl.listCellRenderer.textListCellRenderer
 import com.intellij.util.ui.JBUI
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import javax.swing.DefaultComboBoxModel
@@ -48,8 +53,11 @@ class LogTimeDialog(
         border = JBUI.Borders.customLine(JBColor.border(), 1)
     }
 
+    private val cs = OpenProjectProjectScope.getInstance(project).childScope("LogTimeDialog")
+
     init {
         title = OpenProjectBundle.message("log.time.title", ref.workPackage.presentableId)
+        Disposer.register(disposable) { cs.cancel() }
         init()
         loadActivities()
     }
@@ -79,8 +87,20 @@ class LogTimeDialog(
             comment = commentArea.text.trim().ifEmpty { null },
             activityHref = (activityCombo.selectedItem as? HalLink)?.href,
         )
-        val error = runWithModalProgressBlocking(project, OpenProjectBundle.message("log.time.progress")) {
-            runCatching { TimeEntries.log(connection.api, ref.workPackage, draft) }.exceptionOrNull()
+        val error = try {
+            runWithModalProgressBlocking(project, OpenProjectBundle.message("log.time.progress")) {
+                try {
+                    TimeEntries.log(connection.api, ref.workPackage, draft)
+                    null
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    e
+                }
+            }
+        } catch (_: CancellationException) {
+            // Cancelled while saving (e.g. a slow server): nothing was logged, the dialog stays open.
+            return
         }
         when (error) {
             null -> super.doOKAction()
@@ -95,16 +115,21 @@ class LogTimeDialog(
         null
     }
 
+    /** Loads the activities in the background; closing the dialog cancels the request. Failures keep the server default. */
     private fun loadActivities() {
-        ApplicationManager.getApplication().executeOnPooledThread {
-            val (activities, default) = runCatching {
-                runBlockingMaybeCancellable { TimeEntries.activities(connection.api, ref.workPackage) }
-            }.getOrNull() ?: return@executeOnPooledThread
-            ApplicationManager.getApplication().invokeLater({
-                if (isDisposed) return@invokeLater
+        cs.launch {
+            val (activities, default) = try {
+                TimeEntries.activities(connection.api, ref.workPackage)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                thisLogger().info("Could not load the time entry activities", e)
+                return@launch
+            }
+            withContext(DIALOG_UI) {
                 activityCombo.model = DefaultComboBoxModel((listOf(DEFAULT_ACTIVITY) + activities).toTypedArray())
                 activityCombo.selectedItem = activities.firstOrNull { it.href == default } ?: DEFAULT_ACTIVITY
-            }, ModalityState.any())
+            }
         }
     }
 

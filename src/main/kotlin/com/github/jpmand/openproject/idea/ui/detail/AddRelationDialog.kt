@@ -4,7 +4,7 @@ import com.github.jpmand.openproject.idea.OpenProjectBundle
 import com.github.jpmand.openproject.idea.api.model.WorkPackage
 import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
 import com.github.jpmand.openproject.idea.core.cancelJob
-import com.intellij.openapi.application.EDT
+import com.github.jpmand.openproject.idea.ui.common.DIALOG_UI
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
@@ -19,18 +19,24 @@ import com.intellij.ui.dsl.builder.Align
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.listCellRenderer.textListCellRenderer
 import com.intellij.util.ui.JBUI
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.jetbrains.annotations.TestOnly
 import javax.swing.JComponent
 import javax.swing.ListSelectionModel
 import javax.swing.event.DocumentEvent
 
-/** Picks a relation type and the related work package (searched by id or subject among the server's candidates). */
-class AddRelationDialog(project: Project, private val controller: WorkPackageDetailController) : DialogWrapper(project) {
+/**
+ * Picks a relation type and the related work package, found by [search] (id or subject, relation type) among the
+ * server's candidates.
+ */
+class AddRelationDialog(
+    project: Project,
+    private val search: suspend (query: String, type: String) -> List<WorkPackage>,
+) : DialogWrapper(project) {
 
     data class Result(val type: String, val target: WorkPackage, val description: String?, val lag: Int?)
 
@@ -92,10 +98,14 @@ class AddRelationDialog(project: Project, private val controller: WorkPackageDet
         searchJob?.cancelJob()
         val query = searchField.text.trim()
         val type = typeCombo.selectedItem as String
+        candidateList.setPaintBusy(true)
         searchJob = cs.launch {
             delay(250)
-            val found = runCatching { controller.relationCandidates(query, type) }.getOrDefault(emptyList())
-            withContext(Dispatchers.EDT) {
+            val result = searchSafely { search(query, type) }
+            val found = result.getOrDefault(emptyList())
+            withContext(DIALOG_UI) {
+                candidateList.setPaintBusy(false)
+                candidateList.emptyText.text = searchMessage(result)
                 val selected = candidateList.selectedValue?.id
                 candidates.replaceAll(found)
                 found.indexOfFirst { it.id == selected }.takeIf { it >= 0 }?.let(candidateList::setSelectedIndex)
@@ -103,4 +113,10 @@ class AddRelationDialog(project: Project, private val controller: WorkPackageDet
             }
         }
     }
+
+    @TestOnly
+    internal fun candidateIds(): List<Long> = candidates.items.map { it.id }
+
+    @TestOnly
+    internal fun emptyText(): String = candidateList.emptyText.text
 }

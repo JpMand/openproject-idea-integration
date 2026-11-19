@@ -5,7 +5,8 @@ import com.github.jpmand.openproject.idea.api.hal.HalLink
 import com.github.jpmand.openproject.idea.api.model.WorkPackage
 import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
 import com.github.jpmand.openproject.idea.core.cancelJob
-import com.intellij.openapi.application.EDT
+import com.github.jpmand.openproject.idea.core.describeError
+import com.github.jpmand.openproject.idea.ui.common.DIALOG_UI
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.ValidationInfo
@@ -20,12 +21,13 @@ import com.intellij.ui.dsl.builder.Align
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.listCellRenderer.textListCellRenderer
 import com.intellij.util.ui.JBUI
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.jetbrains.annotations.TestOnly
 import javax.swing.JComponent
 import javax.swing.ListSelectionModel
 import javax.swing.event.DocumentEvent
@@ -98,17 +100,40 @@ class ChooseWorkPackageDialog(
     private fun search() {
         searchJob?.cancelJob()
         val query = searchField.text.trim()
+        candidateList.setPaintBusy(true)
         searchJob = cs.launch {
             delay(250)
-            val found = runCatching { search(query) }.getOrDefault(emptyList()).map { workPackage ->
+            val result = searchSafely { search(query) }
+            val found = result.getOrDefault(emptyList()).map { workPackage ->
                 HalLink(href = workPackage.links.href("self") ?: "/api/v3/work_packages/${workPackage.id}", title = "#${workPackage.id} ${workPackage.subject}")
             }
             val options = (if (allowNone) listOf(HalLink(href = null, title = OpenProjectBundle.message("detail.unassigned"))) else emptyList()) + found
-            withContext(Dispatchers.EDT) {
+            withContext(DIALOG_UI) {
+                candidateList.setPaintBusy(false)
+                candidateList.emptyText.text = searchMessage(result)
                 val selected = candidateList.selectedValue
                 candidates.replaceAll(options)
                 options.indexOfFirst { it == selected }.takeIf { it >= 0 }?.let(candidateList::setSelectedIndex)
             }
         }
     }
+
+    @TestOnly
+    internal fun candidateTitles(): List<String> = candidates.items.map { it.title.orEmpty() }
+
+    @TestOnly
+    internal fun emptyText(): String = candidateList.emptyText.text
 }
+
+/** Runs a search, keeping its failure (server unreachable, ...) to be shown instead of the results; never swallows cancellation. */
+internal suspend fun <T> searchSafely(search: suspend () -> T): Result<T> = try {
+    Result.success(search())
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    Result.failure(e)
+}
+
+/** The text of an empty result list: no matches, or why the search failed. */
+internal fun searchMessage(result: Result<*>): String =
+    result.exceptionOrNull()?.let(::describeError) ?: OpenProjectBundle.message("detail.relations.search.empty")
