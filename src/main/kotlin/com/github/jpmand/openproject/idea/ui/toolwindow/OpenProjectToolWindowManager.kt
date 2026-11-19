@@ -2,6 +2,8 @@ package com.github.jpmand.openproject.idea.ui.toolwindow
 
 import com.github.jpmand.openproject.idea.OpenProjectBundle
 import com.github.jpmand.openproject.idea.core.OpenProjectServers
+import com.github.jpmand.openproject.idea.core.OpenProjectServersListener
+import com.github.jpmand.openproject.idea.core.ServerChanges
 import com.github.jpmand.openproject.idea.ui.detail.WorkPackageDetailPanel
 import com.github.jpmand.openproject.idea.ui.list.ListViewState
 import com.github.jpmand.openproject.idea.ui.list.WorkPackageListPanel
@@ -24,6 +26,7 @@ import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.ex.ToolWindowEx
 import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentFactory
+import com.intellij.ui.content.ContentManager
 import com.intellij.ui.content.ContentManagerEvent
 import com.intellij.ui.content.ContentManagerListener
 import com.intellij.util.xmlb.annotations.Tag
@@ -115,6 +118,31 @@ class OpenProjectToolWindowManager(private val project: Project) : PersistentSta
                 save()
             }
         })
+        project.messageBus.connect(contents).subscribe(OpenProjectServersListener.TOPIC, OpenProjectServersListener { changes ->
+            serversChanged(contents, changes)
+        })
+        // What the servers are now, to notice changes later.
+        OpenProjectServers.getInstance(project).checkForChanges()
+    }
+
+    /**
+     * The URL or API token of Task Servers changed: work package tabs of those servers are closed (they were loaded
+     * with other credentials, maybe as another user), lists of removed servers are closed, and the other lists load
+     * again (the main list follows the configured server).
+     */
+    private fun serversChanged(contents: ContentManager, changes: ServerChanges) {
+        if (contents.isDisposed) return
+        for (content in contents.contents.toList()) {
+            val info = info(content) ?: continue
+            val stale = info.serverId in changes.stale
+            when {
+                info.main -> listPanel(content)?.serversChanged(changes)
+                info.kind == WORK_PACKAGE && stale -> contents.removeContent(content, true)
+                info.kind == LIST && info.serverId in changes.removed -> contents.removeContent(content, true)
+                info.kind == LIST && stale -> listPanel(content)?.serversChanged(changes)
+            }
+        }
+        save()
     }
 
     /** Shows the tool window with the main work package list. */
@@ -204,6 +232,9 @@ class OpenProjectToolWindowManager(private val project: Project) : PersistentSta
 
     private fun info(content: Content): TabInfo? = (content.component as? LazyTab)?.info
 
+    /** The list of a list tab, if shown already (a tab not shown yet loads with the current servers when it is). */
+    private fun listPanel(content: Content): WorkPackageListPanel? = (content.component as? LazyTab)?.created() as? WorkPackageListPanel
+
     /** Creates the panel of a tab when it is first shown, so restored tabs do not all load at once. */
     private fun realize(content: Content?) {
         (content?.component as? LazyTab)?.realize()
@@ -236,6 +267,8 @@ class OpenProjectToolWindowManager(private val project: Project) : PersistentSta
     private class LazyTab(val info: TabInfo, private val create: () -> JComponent) : JPanel(BorderLayout()), Disposable {
         private var panel: JComponent? = null
 
+        fun created(): JComponent? = panel
+
         fun realize(): JComponent = panel ?: create().also { created ->
             panel = created
             (created as? Disposable)?.let { Disposer.register(this, it) }
@@ -253,6 +286,10 @@ class OpenProjectToolWindowManager(private val project: Project) : PersistentSta
 
     @TestOnly
     internal fun tabs(): List<TabInfo> = toolWindow()?.contentManager?.contents?.mapNotNull(::info).orEmpty()
+
+    /** The lists shown so far, the main list first. */
+    @TestOnly
+    internal fun listPanels(): List<WorkPackageListPanel> = toolWindow()?.contentManager?.contents?.mapNotNull(::listPanel).orEmpty()
 
     @TestOnly
     internal fun selectedPanel(): JComponent? = (toolWindow()?.contentManager?.selectedContent?.component as? LazyTab)?.realize()

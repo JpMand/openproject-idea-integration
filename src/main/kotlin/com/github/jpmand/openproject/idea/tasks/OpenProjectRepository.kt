@@ -90,7 +90,13 @@ class OpenProjectRepository : BaseRepository {
     /** The shared client for this server and token. Reads the token from the password safe. */
     @RequiresBackgroundThread
     fun connection(): OpenProjectConnection =
-        OpenProjectClientPool.getInstance().connection(url, if (isLoginAnonymously) null else password)
+        OpenProjectClientPool.getInstance().connection(url, token())
+
+    /** Server and credentials (hashed): a different key means another URL or API token. Reads the token from the password safe. */
+    @RequiresBackgroundThread
+    fun connectionKey(): String = OpenProjectClientPool.key(url, token())
+
+    private fun token(): String? = if (isLoginAnonymously) null else password
 
     override fun getIssues(query: String?, offset: Int, limit: Int, withClosed: Boolean): Array<Task> = blocking {
         val connection = connection()

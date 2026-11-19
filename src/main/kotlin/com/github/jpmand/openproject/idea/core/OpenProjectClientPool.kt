@@ -78,6 +78,9 @@ class OpenProjectClientPool : Disposable {
     companion object {
         fun getInstance(): OpenProjectClientPool = service()
 
+        /** The server and a hash of the token: what tells connections apart. */
+        fun key(baseUrl: String, token: String?): String = OpenProjectUrls.normalizeBaseUrl(baseUrl) + "|" + hash(token.orEmpty())
+
         private fun hash(value: String): String =
             MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
 

@@ -2,6 +2,7 @@ package com.github.jpmand.openproject.idea.tasks
 
 import com.github.jpmand.openproject.idea.OpenProjectBundle
 import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
+import com.github.jpmand.openproject.idea.core.OpenProjectServers
 import com.github.jpmand.openproject.idea.core.cancelJob
 import com.github.jpmand.openproject.idea.ui.common.DIALOG_UI
 import com.intellij.openapi.diagnostic.thisLogger
@@ -54,6 +55,8 @@ class OpenProjectRepositoryEditor(
         installListener(queryCombo)
         installListener(assignedToMeCheckBox)
         installListener(fullTextCheckBox)
+        // Remembers the servers as they were before any change made here.
+        OpenProjectServers.getInstance(project).checkForChanges()
         reloadServerData()
     }
 
@@ -92,8 +95,10 @@ class OpenProjectRepositoryEditor(
         if (connectionSuccessful) reloadServerData()
     }
 
+    /** Called when the settings are closed (also after OK): lists and tabs follow a changed URL or token. */
     override fun dispose() {
         cs.cancel()
+        OpenProjectServers.getInstance(myProject).checkForChanges()
         super.dispose()
     }
 

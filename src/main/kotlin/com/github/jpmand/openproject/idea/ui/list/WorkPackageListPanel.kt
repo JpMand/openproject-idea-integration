@@ -14,6 +14,7 @@ import com.github.jpmand.openproject.idea.core.OpenProjectConnection
 import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
 import com.github.jpmand.openproject.idea.core.OpenProjectServer
 import com.github.jpmand.openproject.idea.core.OpenProjectServers
+import com.github.jpmand.openproject.idea.core.ServerChanges
 import com.github.jpmand.openproject.idea.core.connect
 import com.github.jpmand.openproject.idea.core.describeError
 import com.github.jpmand.openproject.idea.ui.OpenProjectDataKeys
@@ -124,10 +125,12 @@ class WorkPackageListPanel(
 
     private val cs = OpenProjectProjectScope.getInstance(project).childScope("WorkPackageListPanel")
     private val views = WorkPackageListViews.getInstance(project)
-    private val initialServer = OpenProjectServers.getInstance(project).find(requestedServerId)
 
-    /** The server shown; null until one is configured. */
-    @Volatile var serverId: String? = initialServer?.id ?: requestedServerId
+    /**
+     * The server shown; null until one is configured. The main list (no [requestedServerId]) follows the configured
+     * servers: it moves to the first one when its server is removed or its URL changes.
+     */
+    @Volatile var serverId: String? = OpenProjectServers.getInstance(project).find(requestedServerId)?.id ?: requestedServerId
         private set
     private val storageKey: String? get() = viewKey ?: serverId
     private val viewState = MutableStateFlow(initialState())
@@ -255,12 +258,8 @@ class WorkPackageListPanel(
             }
         }
         cs.launch {
-            ActiveWorkPackageTracker.getInstance(project).active.collect { value ->
-                active = value?.takeIf { it.serverId == serverId }
-                withContext(Dispatchers.EDT) {
-                    banner.show(active)
-                    table.repaint()
-                }
+            ActiveWorkPackageTracker.getInstance(project).active.collect {
+                withContext(Dispatchers.EDT) { showActive() }
             }
         }
     }
@@ -275,19 +274,37 @@ class WorkPackageListPanel(
 
     private fun projectId(): Long = (server ?: OpenProjectServers.getInstance(project).find(serverId))?.repository?.projectId ?: 0
 
-    /** Loads the list again (Refresh, Retry). */
+    /** Loads the list again (Refresh, Retry); notices Task Server changes made since. */
     fun reload() {
-        adoptConfiguredServer()
-        connection?.invalidate()
+        OpenProjectServers.getInstance(project).checkForChanges()
+        if (!adoptConfiguredServer()) connection?.invalidate()
+        reloadRequests.tryEmit(Unit)
+    }
+
+    /**
+     * The URL or API token of Task Servers changed (see [OpenProjectServers]): what was loaded with the old ones is
+     * dropped, the main list moves to another server if its own is gone, and the list is loaded again.
+     */
+    fun serversChanged(changes: ServerChanges) {
+        val moved = adoptConfiguredServer()
+        if (!moved && serverId !in changes.stale) return
+        if (!moved) forgetServer()
         reloadRequests.tryEmit(Unit)
     }
 
     // ---- loading ----
 
-    private suspend fun load(query: WorkPackageQuery) {
-        withContext(Dispatchers.EDT) { loadingLabel.isVisible = true }
+    private suspend fun load(requestedQuery: WorkPackageQuery) {
+        // The server this load is for; results for another one (the list moved meanwhile) are dropped.
+        val (loading, query) = withContext(Dispatchers.EDT) {
+            loadingLabel.isVisible = true
+            val moved = adoptConfiguredServer()
+            serverId to if (moved) ListQueries.toQuery(viewState.value) else requestedQuery
+        }
+        fun current() = serverId == loading
         try {
-            val (server, connection) = connect(project, serverId)
+            val (server, connection) = connect(project, loading)
+            if (!current()) return
             this.server = server
             this.connection = connection
             val loadedMetadata = ListMetadata.load(connection)
@@ -295,8 +312,10 @@ class WorkPackageListPanel(
             val metadataChanged = loadedMetadata !== metadata
             metadata = loadedMetadata
             val page = connection.api.workPackages(query)
-            columnColors = loadColumnColors(connection)
+            val colors = loadColumnColors(connection)
             withContext(Dispatchers.EDT) {
+                if (!current()) return@withContext
+                columnColors = colors
                 val types = schemaTypes + page.schemas.flatMap { it.fields.values }.associate { it.attribute to it.type }.filterKeys { it !in schemaTypes }
                 val typesChanged = types != schemaTypes
                 schemaTypes = types
@@ -313,6 +332,7 @@ class WorkPackageListPanel(
             throw e
         } catch (e: OpenProjectApiException) {
             withContext(Dispatchers.EDT) {
+                if (!current()) return@withContext
                 if (e.errorIdentifier == OpenProjectApiException.INVALID_QUERY || e.status == 400) {
                     // The rows of the previous query would not match the filters shown.
                     queryError.text = e.message
@@ -325,7 +345,7 @@ class WorkPackageListPanel(
                 }
             }
         } catch (e: Exception) {
-            withContext(Dispatchers.EDT) { showStatus { status.error(project, e) { reload() } } }
+            withContext(Dispatchers.EDT) { if (current()) showStatus { status.error(project, e) { reload() } } }
         } finally {
             withContext(Dispatchers.EDT + NonCancellable) { loadingLabel.isVisible = false }
         }
@@ -679,11 +699,15 @@ class WorkPackageListPanel(
     }
 
     fun closePreview() {
+        dropPreview()
+        table.requestFocusInWindow()
+    }
+
+    private fun dropPreview() {
         preview?.let(Disposer::dispose)
         preview = null
         splitter.secondComponent = null
         splitter.revalidate()
-        table.requestFocusInWindow()
     }
 
     /** Opens the current filters, sorting and columns in a new list tab. */
@@ -694,13 +718,49 @@ class WorkPackageListPanel(
         OpenProjectToolWindowManager.getInstance(project).openList(serverId, viewState.value.copy(page = 1), title)
     }
 
-    /** A server configured after the list was opened (empty main list) is picked up on refresh. */
-    private fun adoptConfiguredServer() {
-        if (serverId != null && initialServer != null) return
-        val found = OpenProjectServers.getInstance(project).find(requestedServerId) ?: return
-        if (found.id == serverId) return
-        serverId = found.id
+    /**
+     * The main list shows the first configured server when its own is not (or no longer) configured: a server
+     * configured after the list was opened, or a changed URL. Returns whether the list moved to another server.
+     */
+    private fun adoptConfiguredServer(): Boolean {
+        if (requestedServerId != null) return false
+        val servers = OpenProjectServers.getInstance(project)
+        if (serverId != null && servers.find(serverId) != null) return false
+        val found = servers.find(null)?.id ?: return false
+        if (found == serverId) return false
+        serverId = found
+        forgetServer()
+        // The view stored for that server, or a new one.
         viewState.value = initialState()
+        return true
+    }
+
+    /** Drops everything loaded from the server (rows, preview, metadata, saved views) until the list is loaded again. */
+    private fun forgetServer() {
+        server = null
+        connection = null
+        metadata = ListMetadata.FALLBACK
+        columnColors = emptyMap()
+        schemaTypes = emptyMap()
+        savedQueries = emptyList()
+        savedViewsLoaded = false
+        lastPage = null
+        dropPreview()
+        model.items = emptyList()
+        footerLabel.text = ""
+        previousLink.isVisible = false
+        nextLink.isVisible = false
+        queryError.isVisible = false
+        filterBar.refreshMetadata()
+        showActive()
+        showStatus { status.loading() }
+    }
+
+    /** The banner and row highlight of the active task, when it is a work package of this list's server. */
+    private fun showActive() {
+        active = ActiveWorkPackageTracker.getInstance(project).active.value?.takeIf { it.serverId == serverId }
+        banner.show(active)
+        table.repaint()
     }
 
     private fun locate(workPackageId: Long) {
