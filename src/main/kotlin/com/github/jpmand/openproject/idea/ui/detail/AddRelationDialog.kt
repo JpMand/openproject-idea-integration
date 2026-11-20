@@ -31,7 +31,7 @@ import javax.swing.event.DocumentEvent
 
 /**
  * Picks a relation type and the related work package, found by [search] (id or subject, relation type) among the
- * server's candidates.
+ * server's candidates. Nothing is searched until an id or part of a subject is typed.
  */
 class AddRelationDialog(
     project: Project,
@@ -98,6 +98,13 @@ class AddRelationDialog(
         searchJob?.cancelJob()
         val query = searchField.text.trim()
         val type = typeCombo.selectedItem as String
+        if (query.isEmpty()) {
+            // OpenProject refuses to list candidates without a query ("Autocomplete can't be blank").
+            candidateList.setPaintBusy(false)
+            candidates.removeAll()
+            candidateList.emptyText.text = OpenProjectBundle.message("detail.relations.search.prompt")
+            return
+        }
         candidateList.setPaintBusy(true)
         searchJob = cs.launch {
             delay(250)
@@ -112,6 +119,11 @@ class AddRelationDialog(
                 if (candidateList.selectedIndex < 0 && found.size == 1) candidateList.selectedIndex = 0
             }
         }
+    }
+
+    @TestOnly
+    internal fun searchFor(text: String) {
+        searchField.text = text
     }
 
     @TestOnly

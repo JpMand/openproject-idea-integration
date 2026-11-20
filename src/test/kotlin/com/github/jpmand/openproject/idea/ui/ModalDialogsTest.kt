@@ -49,15 +49,34 @@ class ModalDialogsTest : BasePlatformTestCase() {
             searched += query to type
             listOf(workPackage)
         }
+        dialog.searchFor("login")
         whileModal(dialog, "relation candidates") { dialog.candidateIds() == listOf(workPackage.id) }
-        assertEquals("" to "relates", searched.last())
+        assertEquals("login" to "relates", searched.last())
         // a single candidate is selected, so the dialog can be confirmed at once
         assertEquals(workPackage.id, dialog.result().target.id)
     }
 
     fun `test a failing relation search says why`() {
         val dialog = AddRelationDialog(project) { _, _ -> throw ConnectException("Connection refused") }
+        dialog.searchFor("12")
         whileModal(dialog, "error text") { dialog.emptyText().contains("Connection refused") }
         assertEmpty(dialog.candidateIds())
+    }
+
+    fun `test relation candidates are not searched without a query`() {
+        val searched = mutableListOf<String>()
+        val dialog = AddRelationDialog(project) { query, _ ->
+            searched += query
+            listOf(workPackage)
+        }
+        // OpenProject answers a blank query with "Autocomplete can't be blank": the dialog asks for one instead.
+        assertEquals("Type an id or part of the subject to find the work package", dialog.emptyText())
+        dialog.searchFor("lo")
+        dialog.searchFor("  ")
+        val settled = System.currentTimeMillis() + 600
+        whileModal(dialog, "searches settled") { System.currentTimeMillis() > settled }
+        assertEmpty(searched)
+        assertEmpty(dialog.candidateIds())
+        assertEquals("Type an id or part of the subject to find the work package", dialog.emptyText())
     }
 }
