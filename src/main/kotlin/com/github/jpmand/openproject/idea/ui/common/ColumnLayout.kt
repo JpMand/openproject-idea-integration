@@ -1,5 +1,6 @@
 package com.github.jpmand.openproject.idea.ui.common
 
+import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import java.awt.Component
 import java.awt.Container
@@ -7,11 +8,14 @@ import java.awt.Dimension
 import java.awt.LayoutManager
 import java.awt.LayoutManager2
 import java.awt.Rectangle
+import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.JTextArea
 import javax.swing.JViewport
+import javax.swing.ScrollPaneConstants
 import javax.swing.Scrollable
 import javax.swing.SwingConstants
+import javax.swing.border.Border
 
 /**
  * Stacks the visible components top to bottom, each as wide as the container. Every component is given that
@@ -81,6 +85,22 @@ class ScrollableColumnPanel : JPanel(ColumnLayout()), Scrollable {
     override fun getScrollableTracksViewportWidth(): Boolean = true
 
     override fun getScrollableTracksViewportHeight(): Boolean = (parent as? JViewport)?.let { it.height > preferredSize.height } ?: false
+
+    companion object {
+        /**
+         * A scroll pane showing [content] as wide as the viewport, inside [border]: it scrolls vertically only, and text
+         * in it wraps instead of widening the view.
+         */
+        fun scrollPane(content: JComponent, border: Border = JBUI.Borders.empty()): JBScrollPane =
+            JBScrollPane(
+                ScrollableColumnPanel().apply {
+                    this.border = border
+                    add(content)
+                },
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER,
+            ).apply { this.border = JBUI.Borders.empty() }
+    }
 }
 
 /**

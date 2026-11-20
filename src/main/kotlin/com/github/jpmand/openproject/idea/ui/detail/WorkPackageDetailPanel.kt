@@ -286,11 +286,8 @@ class WorkPackageDetailPanel(
         }
     }
 
-    private fun scrolled(component: JComponent): JComponent =
-        JBScrollPane(JPanel(BorderLayout()).apply {
-            border = JBUI.Borders.empty(8, 12)
-            add(component, BorderLayout.NORTH)
-        }).apply { border = JBUI.Borders.empty() }
+    /** As wide as the tab: comments and changes wrap instead of scrolling sideways. */
+    private fun scrolled(component: JComponent): JComponent = ScrollableColumnPanel.scrollPane(component, JBUI.Borders.empty(8, 12))
 
     /** Left-aligned components with a gap after each (no leading gap, unlike FlowLayout's hgap); wraps when narrow. */
     private fun row(vararg components: JComponent): JPanel = JPanel(WrapLayout(FlowLayout.LEFT, 0, 0)).apply {

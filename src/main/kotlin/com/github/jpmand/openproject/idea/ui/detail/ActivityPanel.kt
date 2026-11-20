@@ -2,6 +2,7 @@ package com.github.jpmand.openproject.idea.ui.detail
 
 import com.github.jpmand.openproject.idea.OpenProjectBundle
 import com.github.jpmand.openproject.idea.api.model.Activity
+import com.github.jpmand.openproject.idea.ui.common.ColumnLayout
 import com.github.jpmand.openproject.idea.ui.common.HtmlView
 import com.github.jpmand.openproject.idea.ui.common.MarkdownField
 import com.intellij.openapi.editor.markup.TextAttributes
@@ -16,7 +17,6 @@ import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
 import java.awt.FlowLayout
 import java.time.Instant
-import javax.swing.BoxLayout
 import javax.swing.Icon
 import javax.swing.JButton
 import javax.swing.JComponent
@@ -29,10 +29,11 @@ class ActivityPanel(
     /** The avatar of the user at an href with a name. */
     private val avatar: (href: String?, name: String) -> Icon? = { _, _ -> null },
     private val onComment: (text: String, internal: Boolean, done: (Boolean) -> Unit) -> Unit,
-) : JPanel(BorderLayout()) {
+) : JPanel(ColumnLayout()) {
 
-    private val items = JPanel().apply {
-        layout = BoxLayout(this, BoxLayout.Y_AXIS)
+    // Column layouts all the way down to the HTML: each part is measured at the width of the tab, so wrapped
+    // comments and changes get the height of their lines.
+    private val items = JPanel(ColumnLayout()).apply {
         isOpaque = false
     }
     private val composer = MarkdownField(project, "", 4).apply {
@@ -47,7 +48,7 @@ class ActivityPanel(
 
     init {
         isOpaque = false
-        add(items, BorderLayout.CENTER)
+        add(items)
         add(JPanel(BorderLayout()).apply {
             isOpaque = false
             border = JBUI.Borders.emptyTop(12)
@@ -59,7 +60,7 @@ class ActivityPanel(
                 add(submit)
                 add(internalBox.apply { border = JBUI.Borders.emptyLeft(12) })
             }, BorderLayout.SOUTH)
-        }, BorderLayout.SOUTH)
+        })
         submit.addActionListener {
             val text = composer.text.trim()
             if (text.isEmpty()) return@addActionListener
@@ -86,10 +87,9 @@ class ActivityPanel(
     }
 
     private fun item(activity: Activity, userNames: Map<String, String>): JComponent {
-        val panel = JPanel(BorderLayout()).apply {
+        val panel = JPanel(ColumnLayout()).apply {
             isOpaque = false
             border = JBUI.Borders.compound(JBUI.Borders.customLineTop(JBColor.border()), JBUI.Borders.empty(8, 0))
-            alignmentX = 0f
         }
         val user = activity.links.href("user")?.let(userNames::get) ?: activity.links.title("user") ?: OpenProjectBundle.message("detail.activity.someone")
         val time = activity.createdAt?.let { runCatching { DateFormatUtil.formatPrettyDateTime(Instant.parse(it).toEpochMilli()) }.getOrNull() }.orEmpty()
@@ -100,7 +100,7 @@ class ActivityPanel(
         }
         panel.add(JBLabel("<html>$header</html>", avatar(activity.links.href("user"), user), JBLabel.LEFT).apply {
             iconTextGap = JBUI.scale(6)
-        }, BorderLayout.NORTH)
+        })
         val body = buildString {
             activity.comment?.html?.takeIf { activity.isComment }?.let(::append)
             if (activity.details.isNotEmpty()) {
@@ -109,7 +109,7 @@ class ActivityPanel(
                 append("</ul>")
             }
         }
-        if (body.isNotEmpty()) panel.add(html().apply { setHtml(body) }, BorderLayout.CENTER)
+        if (body.isNotEmpty()) panel.add(html().apply { setHtml(body) })
         return panel
     }
 }
