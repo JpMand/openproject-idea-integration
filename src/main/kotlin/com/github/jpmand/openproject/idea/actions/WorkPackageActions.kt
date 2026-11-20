@@ -5,6 +5,8 @@ import com.github.jpmand.openproject.idea.core.ActiveWorkPackageTracker
 import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
 import com.github.jpmand.openproject.idea.core.OpenProjectServers
 import com.github.jpmand.openproject.idea.core.TimeEntries
+import com.github.jpmand.openproject.idea.core.WorkPackageChange
+import com.github.jpmand.openproject.idea.core.WorkPackageChangesListener
 import com.github.jpmand.openproject.idea.core.connect
 import com.github.jpmand.openproject.idea.core.describeError
 import com.github.jpmand.openproject.idea.core.needsServerSettings
@@ -83,7 +85,6 @@ class LogTimeAction : DumbAwareAction(AllIcons.Vcs.History) {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val contextRef = e.getData(OpenProjectDataKeys.WORK_PACKAGE)
-        val refresher = e.getData(OpenProjectDataKeys.REFRESHER)
         val active = ActiveWorkPackageTracker.getInstance(project).active.value
         val serverId = contextRef?.server?.id ?: active?.serverId ?: return
         val workPackageId = contextRef?.workPackage?.id ?: active?.workPackageId ?: return
@@ -98,7 +99,8 @@ class LogTimeAction : DumbAwareAction(AllIcons.Vcs.History) {
                     if (!TimeEntries.canLogTime(workPackage)) {
                         notifyError(project, OpenProjectBundle.message("time.tracking.unavailable", workPackage.presentableId))
                     } else if (LogTimeDialog(project, WorkPackageRef(server, workPackage), connection).showAndGet()) {
-                        refresher?.run()
+                        // The spent time changed: lists and pages showing the work package catch up.
+                        WorkPackageChangesListener.publish(project, WorkPackageChange(server.id, workPackage.id))
                     }
                 }
             } catch (e: CancellationException) {

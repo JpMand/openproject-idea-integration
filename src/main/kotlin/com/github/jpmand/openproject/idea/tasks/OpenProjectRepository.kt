@@ -11,6 +11,7 @@ import com.github.jpmand.openproject.idea.api.model.WorkPackage
 import com.github.jpmand.openproject.idea.core.OpenProjectClientPool
 import com.github.jpmand.openproject.idea.core.OpenProjectConnection
 import com.github.jpmand.openproject.idea.core.TimeEntries
+import com.github.jpmand.openproject.idea.core.WorkPackageChangesListener
 import com.github.jpmand.openproject.idea.core.cancelJob
 import com.github.jpmand.openproject.idea.core.describeError
 import com.intellij.openapi.application.ApplicationManager
@@ -218,6 +219,8 @@ class OpenProjectRepository : BaseRepository {
         }
         LOG.info("Status of #${task.id} set to ${state.presentableName}")
         stateChanges[stateKey(task.id)] = state.presentableName
+        // Lists and pages showing the work package catch up.
+        url?.let { serverUrl -> task.id.toLongOrNull()?.let { WorkPackageChangesListener.publishToAll(serverUrl, it) } }
     }
 
     /** A status update that was refused or cancelled; Tasks shows [message] to the user. */

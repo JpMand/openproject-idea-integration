@@ -7,6 +7,7 @@ import com.github.jpmand.openproject.idea.api.model.Attachment
 import com.github.jpmand.openproject.idea.api.model.WorkPackage
 import com.github.jpmand.openproject.idea.core.ActiveWorkPackageTracker
 import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
+import com.github.jpmand.openproject.idea.core.WorkPackageChangesListener
 import com.github.jpmand.openproject.idea.core.cancelJob
 import com.github.jpmand.openproject.idea.core.describeError
 import com.github.jpmand.openproject.idea.ui.OpenProjectDataKeys
@@ -193,6 +194,10 @@ class WorkPackageDetailPanel(
                 }
             }
         }
+        // Changed elsewhere (another page of it, Log Time, a task status update): this page loads it again.
+        project.messageBus.connect(this).subscribe(WorkPackageChangesListener.TOPIC, WorkPackageChangesListener { change ->
+            if (change.serverId == serverId && change.workPackageId == workPackageId && change.source !== controller) reload()
+        })
     }
 
     fun reload() {

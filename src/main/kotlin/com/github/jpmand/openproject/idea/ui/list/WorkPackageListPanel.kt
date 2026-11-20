@@ -15,6 +15,8 @@ import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
 import com.github.jpmand.openproject.idea.core.OpenProjectServer
 import com.github.jpmand.openproject.idea.core.OpenProjectServers
 import com.github.jpmand.openproject.idea.core.ServerChanges
+import com.github.jpmand.openproject.idea.core.WorkPackageChange
+import com.github.jpmand.openproject.idea.core.WorkPackageChangesListener
 import com.github.jpmand.openproject.idea.core.connect
 import com.github.jpmand.openproject.idea.core.describeError
 import com.github.jpmand.openproject.idea.ui.OpenProjectDataKeys
@@ -34,6 +36,7 @@ import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.actionSystem.Separator
 import com.intellij.openapi.actionSystem.UiDataProvider
 import com.intellij.openapi.application.EDT
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.DumbAwareToggleAction
 import com.intellij.openapi.project.Project
@@ -262,6 +265,36 @@ class WorkPackageListPanel(
                 withContext(Dispatchers.EDT) { showActive() }
             }
         }
+        project.messageBus.connect(this).subscribe(WorkPackageChangesListener.TOPIC, WorkPackageChangesListener(::workPackageChanged))
+    }
+
+    /**
+     * A work package was changed on its page, by Log Time or by a task status update: its row shows the new state. The
+     * rows stay where they are (no new query), so the list does not jump while it is being worked with.
+     */
+    private fun workPackageChanged(change: WorkPackageChange) {
+        if (change.serverId != serverId || model.items.none { it.id == change.workPackageId }) return
+        val workPackage = change.workPackage
+        if (workPackage != null) {
+            replaceRow(workPackage)
+            return
+        }
+        cs.launch {
+            val fresh = try {
+                currentConnection().api.workPackage(change.workPackageId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                thisLogger().info("Could not load #${change.workPackageId} after a change", e)
+                return@launch
+            }
+            withContext(Dispatchers.EDT) { if (change.serverId == serverId) replaceRow(fresh) }
+        }
+    }
+
+    private fun replaceRow(workPackage: WorkPackage) {
+        val index = model.items.indexOfFirst { it.id == workPackage.id }.takeIf { it >= 0 } ?: return
+        model.setItem(index, workPackage)
     }
 
     private fun initialState(): ListViewState {

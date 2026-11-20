@@ -15,6 +15,8 @@ import com.github.jpmand.openproject.idea.api.model.SchemaField
 import com.github.jpmand.openproject.idea.api.model.WorkPackage
 import com.github.jpmand.openproject.idea.core.OpenProjectConnection
 import com.github.jpmand.openproject.idea.core.OpenProjectServer
+import com.github.jpmand.openproject.idea.core.WorkPackageChange
+import com.github.jpmand.openproject.idea.core.WorkPackageChangesListener
 import com.github.jpmand.openproject.idea.core.connect
 import com.github.jpmand.openproject.idea.ui.WorkPackageRef
 import com.github.jpmand.openproject.idea.ui.common.StatusColors
@@ -135,6 +137,7 @@ class WorkPackageDetailController(private val project: Project, private val serv
         try {
             val updated = api.updateWorkPackage(workPackage, patch)
             loadUnlocked()
+            changed()
             updated
         } catch (e: OpenProjectApiException) {
             if (e.isConflict) {
@@ -186,18 +189,21 @@ class WorkPackageDetailController(private val project: Project, private val serv
     suspend fun addComment(text: String, internal: Boolean): Activity = mutex.withLock {
         val activity = connection().api.addComment(current().workPackage, text, internal)
         loadUnlocked()
+        changed()
         activity
     }
 
     suspend fun upload(fileName: String, contentType: String?, bytes: ByteArray, description: String? = null): Attachment = mutex.withLock {
         val attachment = connection().api.uploadAttachment(current().workPackage, fileName, contentType, bytes, description)
         loadUnlocked()
+        changed()
         attachment
     }
 
     suspend fun deleteAttachment(attachment: Attachment) = mutex.withLock {
         connection().api.deleteAttachment(attachment)
         loadUnlocked()
+        changed()
     }
 
     /** An attachment by id: one of this work package's, or else loaded from the server (e.g. linked in a comment). */
@@ -216,13 +222,29 @@ class WorkPackageDetailController(private val project: Project, private val serv
         val toHref = to.links.href("self") ?: "/api/v3/work_packages/${to.id}"
         val relation = connection().api.createRelation(current().workPackage, type, toHref, description, lag)
         loadUnlocked()
+        changed(relatedId = to.id)
         relation
     }
 
     suspend fun deleteRelation(relation: Relation) = mutex.withLock {
         connection().api.deleteRelation(relation)
         loadUnlocked()
+        changed(relatedId = otherEnd(relation))
     }
 
     suspend fun renderMarkdown(raw: String): String = connection().api.renderMarkdown(raw, current().workPackage)
+
+    /**
+     * Tells lists and other pages that this work package changed (they show its new state), and that [relatedId], the
+     * other end of a relation added or removed here, has to be loaded again.
+     */
+    private fun changed(relatedId: Long? = null) {
+        val workPackage = current().workPackage
+        WorkPackageChangesListener.publish(project, WorkPackageChange(serverId, workPackageId, workPackage, source = this))
+        relatedId?.takeIf { it != workPackageId }?.let { WorkPackageChangesListener.publish(project, WorkPackageChange(serverId, it)) }
+    }
+
+    /** The id of the work package at the other end of [relation]. */
+    private fun otherEnd(relation: Relation): Long? =
+        listOf("from", "to").mapNotNull { relation.links.href(it)?.substringAfterLast('/')?.toLongOrNull() }.firstOrNull { it != workPackageId }
 }
