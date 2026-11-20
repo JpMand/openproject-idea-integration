@@ -5,6 +5,8 @@ import com.github.jpmand.openproject.idea.api.MockOpenProject.Companion.collecti
 import com.github.jpmand.openproject.idea.api.MockOpenProject.Companion.hal
 import com.github.jpmand.openproject.idea.api.MockOpenProject.Companion.notFound
 import com.github.jpmand.openproject.idea.api.MockOpenProject.Companion.workPackage
+import com.github.jpmand.openproject.idea.core.ActiveWorkPackageTracker
+import com.github.jpmand.openproject.idea.core.OpenProjectServers
 import com.github.jpmand.openproject.idea.core.WorkPackageChange
 import com.github.jpmand.openproject.idea.core.WorkPackageChangesListener
 import com.github.jpmand.openproject.idea.tasks.OpenProjectRepository
@@ -35,6 +37,7 @@ class WorkPackageChangesTest : BasePlatformTestCase() {
             when (request.url.encodedPath) {
                 "/api/v3/work_packages" -> hal(collection(workPackage(42, subject), workPackage(7, "Write the docs")))
                 "/api/v3/work_packages/42" -> hal(workPackage(42, subject))
+                "/api/v3/work_packages/7" -> hal(workPackage(7, "Write the docs"))
                 else -> notFound()
             }
         }
@@ -127,6 +130,26 @@ class WorkPackageChangesTest : BasePlatformTestCase() {
         } finally {
             Disposer.dispose(page)
             Disposer.dispose(preview)
+        }
+    }
+
+    fun `test log time of the banner is for the active task, not the selected row`() {
+        val list = WorkPackageListPanel(project, null, null)
+        try {
+            waitFor("rows") { list.loadedWorkPackages().size == 2 }
+            val active = list.loadedWorkPackages().single { it.id == 7L }
+            ActiveWorkPackageTracker.getInstance(project).activate(OpenProjectServers.getInstance(project).servers().single(), active)
+            list.select(42)
+            // #7 has no "logTime" link: Log Time loads it and tells that time cannot be logged, without a dialog.
+            list.logTimeFromBanner()
+            waitFor("active work package loaded") { loads(7) == 1 }
+            assertEquals(0, loads(42))
+        } finally {
+            Disposer.dispose(list)
+            TaskManager.getManager(project).let { manager ->
+                manager.activateTask(manager.localTasks.first { it.isDefault }, false)
+                manager.localTasks.filterNot { it.isDefault }.forEach(manager::removeTask)
+            }
         }
     }
 

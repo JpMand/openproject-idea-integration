@@ -88,25 +88,32 @@ class LogTimeAction : DumbAwareAction(AllIcons.Vcs.History) {
         val active = ActiveWorkPackageTracker.getInstance(project).active.value
         val serverId = contextRef?.server?.id ?: active?.serverId ?: return
         val workPackageId = contextRef?.workPackage?.id ?: active?.workPackageId ?: return
-        OpenProjectProjectScope.getInstance(project).cs.launch {
-            try {
-                // The latest work package (time tracking may have been switched off); visible and cancellable when slow.
-                val (server, connection, workPackage) = withBackgroundProgress(project, OpenProjectBundle.message("log.time.loading")) {
-                    val (server, connection) = connect(project, serverId)
-                    Triple(server, connection, connection.api.workPackage(workPackageId))
-                }
-                withContext(Dispatchers.EDT) {
-                    if (!TimeEntries.canLogTime(workPackage)) {
-                        notifyError(project, OpenProjectBundle.message("time.tracking.unavailable", workPackage.presentableId))
-                    } else if (LogTimeDialog(project, WorkPackageRef(server, workPackage), connection).showAndGet()) {
-                        // The spent time changed: lists and pages showing the work package catch up.
-                        WorkPackageChangesListener.publish(project, WorkPackageChange(server.id, workPackage.id))
+        logTime(project, serverId, workPackageId)
+    }
+
+    companion object {
+        /** Shows Log Time for a work package, loaded first: time tracking may have been switched off for it meanwhile. */
+        fun logTime(project: Project, serverId: String, workPackageId: Long) {
+            OpenProjectProjectScope.getInstance(project).cs.launch {
+                try {
+                    // The latest work package (time tracking may have been switched off); visible and cancellable when slow.
+                    val (server, connection, workPackage) = withBackgroundProgress(project, OpenProjectBundle.message("log.time.loading")) {
+                        val (server, connection) = connect(project, serverId)
+                        Triple(server, connection, connection.api.workPackage(workPackageId))
                     }
+                    withContext(Dispatchers.EDT) {
+                        if (!TimeEntries.canLogTime(workPackage)) {
+                            notifyError(project, OpenProjectBundle.message("time.tracking.unavailable", workPackage.presentableId))
+                        } else if (LogTimeDialog(project, WorkPackageRef(server, workPackage), connection).showAndGet()) {
+                            // The spent time changed: lists and pages showing the work package catch up.
+                            WorkPackageChangesListener.publish(project, WorkPackageChange(server.id, workPackage.id))
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    withContext(Dispatchers.EDT) { notifyError(project, describeError(e), e) }
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                withContext(Dispatchers.EDT) { notifyError(project, describeError(e), e) }
             }
         }
     }

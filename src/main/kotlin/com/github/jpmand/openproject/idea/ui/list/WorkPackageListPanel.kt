@@ -1,6 +1,7 @@
 package com.github.jpmand.openproject.idea.ui.list
 
 import com.github.jpmand.openproject.idea.OpenProjectBundle
+import com.github.jpmand.openproject.idea.actions.LogTimeAction
 import com.github.jpmand.openproject.idea.api.Filters
 import com.github.jpmand.openproject.idea.api.OpenProjectApiException
 import com.github.jpmand.openproject.idea.api.SortSpec
@@ -29,7 +30,6 @@ import com.github.jpmand.openproject.idea.ui.toolwindow.OpenProjectToolWindowMan
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionManager
-import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
@@ -849,12 +849,14 @@ class WorkPackageListPanel(
             add(ActionLink(OpenProjectBundle.message("list.active.open")) {
                 active?.let { OpenProjectToolWindowManager.getInstance(project).openWorkPackage(it.serverId, it.workPackageId) }
             })
-            add(ActionLink(OpenProjectBundle.message("list.active.log.time")) { e ->
-                val action = ActionManager.getInstance().getAction("OpenProject.LogTime")
-                ActionManager.getInstance().tryToExecute(action, null, e.source as JComponent, ActionPlaces.EDITOR_TOOLBAR, true)
-            })
+            // The active task's work package, not the one selected in the list (the context of the Log Time action).
+            add(ActionLink(OpenProjectBundle.message("list.active.log.time")) { logTimeOnActive() })
             add(ActionLink(OpenProjectBundle.message("list.active.locate")) { active?.let { locate(it.workPackageId) } })
             isVisible = false
+        }
+
+        fun logTimeOnActive() {
+            active?.let { LogTimeAction.logTime(project, it.serverId, it.workPackageId) }
         }
 
         fun show(active: ActiveWorkPackage?) {
@@ -868,6 +870,10 @@ class WorkPackageListPanel(
 
     @TestOnly
     internal fun loadedWorkPackages(): List<WorkPackage> = model.items
+
+    /** "Log time…" of the active task banner. */
+    @TestOnly
+    internal fun logTimeFromBanner() = banner.logTimeOnActive()
 
     @TestOnly
     internal fun pageSummary(): String = footerLabel.text
