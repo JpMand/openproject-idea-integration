@@ -64,6 +64,7 @@ class ActivityPanel(
         submit.addActionListener {
             val text = composer.text.trim()
             if (text.isEmpty()) return@addActionListener
+            // Disabling the focused button moves the focus on (to the subject of the page): it comes back here when done.
             submit.isEnabled = false
             onComment(text, internalBox.isSelected) { success ->
                 submit.isEnabled = true
@@ -71,6 +72,7 @@ class ActivityPanel(
                     composer.text = ""
                     internalBox.isSelected = false
                 }
+                composer.requestFocusInWindow()
             }
         }
     }
