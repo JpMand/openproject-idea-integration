@@ -8,14 +8,19 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.text.StringUtil
+import com.intellij.ui.DoubleClickListener
 import com.intellij.ui.ToolbarDecorator
 import com.intellij.ui.table.TableView
 import com.intellij.util.text.DateFormatUtil
 import com.intellij.util.ui.ColumnInfo
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.ListTableModel
+import org.jetbrains.annotations.TestOnly
 import java.awt.BorderLayout
 import java.awt.datatransfer.DataFlavor
+import java.awt.event.KeyAdapter
+import java.awt.event.KeyEvent
+import java.awt.event.MouseEvent
 import java.io.File
 import java.time.Instant
 import javax.swing.JComponent
@@ -50,6 +55,15 @@ class FilesPanel(
 
     init {
         isOpaque = false
+        // Double-click or Enter opens the file, like "Open" in the toolbar.
+        object : DoubleClickListener() {
+            override fun onDoubleClick(event: MouseEvent): Boolean = openSelected()
+        }.installOn(table)
+        table.addKeyListener(object : KeyAdapter() {
+            override fun keyPressed(e: KeyEvent) {
+                if (e.keyCode == KeyEvent.VK_ENTER && openSelected()) e.consume()
+            }
+        })
         val decorated = ToolbarDecorator.createDecorator(table)
             .setAddAction { onUpload() }
             .setAddActionName(OpenProjectBundle.message("detail.files.upload"))
@@ -71,7 +85,7 @@ class FilesPanel(
                     e.presentation.isEnabled = table.selectedObject != null
                 }
                 override fun actionPerformed(e: AnActionEvent) {
-                    table.selectedObject?.let(onOpen)
+                    openSelected()
                 }
             })
             .disableUpDownActions()
@@ -94,9 +108,18 @@ class FilesPanel(
         (table.parent?.parent as? JComponent)?.transferHandler = dropHandler
     }
 
+    @TestOnly
+    internal fun table(): TableView<Attachment> = table
+
     fun show(attachments: List<Attachment>, canAttach: Boolean) {
         this.canAttach = canAttach
         model.items = attachments
+    }
+
+    private fun openSelected(): Boolean {
+        val attachment = table.selectedObject ?: return false
+        onOpen(attachment)
+        return true
     }
 
     private fun confirmDelete(attachment: Attachment) {
