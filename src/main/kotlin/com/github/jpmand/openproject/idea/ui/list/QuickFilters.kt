@@ -83,6 +83,7 @@ class QuickFilterLink(
 
     /** Loading the values to choose from; further clicks wait for it (a slow server must not stack popups). */
     private var choosing: Job? = null
+    private var loadingTitles: Job? = null
 
     init {
         isOpaque = false
@@ -100,14 +101,20 @@ class QuickFilterLink(
         if (own == current && link.text.isNotEmpty()) return
         current = own
         render()
-        // Value ids ("12") are shown with their titles once known.
-        if (options == null && own.any { filter -> filter.values.any { it != "me" } }) {
-            cs.launch {
-                val loaded = runCatching { loadOptions(def.elementType) }.getOrNull() ?: return@launch
-                withContext(Dispatchers.EDT) {
-                    options = loaded
-                    render()
-                }
+        loadTitles()
+    }
+
+    /**
+     * Value ids ("12") are shown with their titles once known. The list calls this again after each load, so the titles
+     * come once the server answers when it could not be asked before (unreachable, no API token yet).
+     */
+    fun loadTitles() {
+        if (options != null || loadingTitles?.isActive == true || current.none { filter -> filter.values.any { it != "me" } }) return
+        loadingTitles = cs.launch {
+            val loaded = runCatching { loadOptions(def.elementType) }.getOrNull() ?: return@launch
+            withContext(Dispatchers.EDT) {
+                options = loaded
+                render()
             }
         }
     }

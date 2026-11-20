@@ -404,6 +404,8 @@ class WorkPackageListPanel(
         previousLink.isEnabled = page.page > 1
         nextLink.isEnabled = page.page < pages
         if (page.elements.isEmpty()) showStatus { status.empty(OpenProjectBundle.message("list.empty")) } else showTable()
+        // The server answers: filter values shown as ids so far get their titles.
+        quickFilters.forEach(QuickFilterLink::loadTitles)
     }
 
     private suspend fun loadResourceOptions(elementType: String): List<ValueOption> =
