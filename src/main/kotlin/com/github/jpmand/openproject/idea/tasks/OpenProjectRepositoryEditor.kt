@@ -86,14 +86,22 @@ class OpenProjectRepositoryEditor(
      * Settings | Tools | Tasks | Servers gives the editor only the height left below the list of servers, which cut off
      * the end of the General tab (the project settings, Use proxy and Test). The tab scrolls instead. Its form sets the
      * preferred size to (-1, -1), which would make it as small as the visible area: it is computed from the layout again.
+     *
+     * The tab is detached by [javax.swing.JTabbedPane.setComponentAt] before it goes into the scroll pane: creating the
+     * scroll pane with it while it is still a tab would remove the whole tab from the tabbed pane, and the scroll pane
+     * would replace the next one (Commit Message).
      */
     private fun scrollGeneralTab() {
         val index = (0 until myTabbedPane.tabCount).firstOrNull { SwingUtilities.isDescendingFrom(myCustomPanel, myTabbedPane.getComponentAt(it)) } ?: return
         val general = myTabbedPane.getComponentAt(index) as? JComponent ?: return
         general.preferredSize = null
-        myTabbedPane.setComponentAt(index, ScrollPaneFactory.createScrollPane(general, true).apply {
+        val scrollPane = ScrollPaneFactory.createScrollPane(null, true).apply {
             verticalScrollBar.unitIncrement = JBUI.scale(16)
-        })
+        }
+        myTabbedPane.setComponentAt(index, scrollPane)
+        // The tabbed pane hides the components of its tabs until they are selected; the scroll pane is its tab now.
+        general.isVisible = true
+        scrollPane.setViewportView(general)
     }
 
     override fun apply() {

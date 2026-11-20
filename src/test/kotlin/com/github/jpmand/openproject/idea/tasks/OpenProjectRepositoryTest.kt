@@ -100,8 +100,14 @@ class OpenProjectRepositoryTest : BasePlatformTestCase() {
             component.size = Dimension(600, 265)
             layOut(component)
             val tabs = UIUtil.findComponentOfType(component, JBTabbedPane::class.java)!!
+            // Both tabs are kept: General (now scrolling) and Commit Message, with their own contents.
+            assertEquals(listOf("General", "Commit Message"), (0 until tabs.tabCount).map(tabs::getTitleAt))
+            assertFalse(tabs.getComponentAt(1) is JScrollPane)
+            assertTrue("the Commit Message tab keeps its settings", UIUtil.findComponentsOfType(tabs.getComponentAt(1) as JComponent, JComponent::class.java).isNotEmpty())
             val general = tabs.getComponentAt(0)
             assertInstanceOf(general, JScrollPane::class.java)
+            assertTrue("the General tab shows the server settings", UIUtil.findComponentsOfType((general as JScrollPane).viewport.view as JComponent, JButton::class.java).any { it.text == "Test" })
+            assertTrue("the server settings are visible in the scroll pane", general.viewport.view.isVisible)
             val viewport = (general as JScrollPane).viewport
             val content = viewport.view as JComponent
             assertTrue("the settings are taller than the tab", content.height > viewport.height)
