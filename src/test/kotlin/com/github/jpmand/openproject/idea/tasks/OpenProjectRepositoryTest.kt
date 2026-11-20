@@ -156,6 +156,9 @@ class OpenProjectRepositoryTest : BasePlatformTestCase() {
         assertFalse(OpenProjectHttpClient.isTimeout(ConnectException("Connection refused")))
         assertEquals("OpenProject did not answer in time. Check the connection and try again.", describeError(timeout))
         assertEquals("Cannot reach the OpenProject server (op.example.com).", describeError(UnknownHostException("op.example.com")))
+        // Without a message (as some clients throw it): no empty parentheses, but the cause's message when there is one.
+        assertEquals("Cannot reach the OpenProject server.", describeError(ConnectException()))
+        assertEquals("Cannot reach the OpenProject server (Connection refused).", describeError(ConnectException().apply { initCause(ConnectException("Connection refused")) }))
     }
 
     fun `test closing a task is confirmed with its status`() {

@@ -374,11 +374,11 @@ class WorkPackageListPanel(
                     footerLabel.text = ""
                     showStatus { status.empty(OpenProjectBundle.message("list.empty")) }
                 } else {
-                    showStatus { status.error(project, e) { reload() } }
+                    showError(e)
                 }
             }
         } catch (e: Exception) {
-            withContext(Dispatchers.EDT) { if (current()) showStatus { status.error(project, e) { reload() } } }
+            withContext(Dispatchers.EDT) { if (current()) showError(e) }
         } finally {
             withContext(Dispatchers.EDT + NonCancellable) { loadingLabel.isVisible = false }
         }
@@ -816,6 +816,14 @@ class WorkPackageListPanel(
         center.repaint()
     }
 
+    /** A failed load: the error with Retry; the page summary and paging of the last results no longer apply. */
+    private fun showError(error: Throwable) {
+        footerLabel.text = ""
+        previousLink.isVisible = false
+        nextLink.isVisible = false
+        showStatus { status.error(project, error) { reload() } }
+    }
+
     private fun showStatus(update: () -> Unit) {
         update()
         if (status.parent != center) {
@@ -858,6 +866,9 @@ class WorkPackageListPanel(
 
     @TestOnly
     internal fun loadedWorkPackages(): List<WorkPackage> = model.items
+
+    @TestOnly
+    internal fun pageSummary(): String = footerLabel.text
 
     @TestOnly
     internal fun viewState(): ListViewState = viewState.value

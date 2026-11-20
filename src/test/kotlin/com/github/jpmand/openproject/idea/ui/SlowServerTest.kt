@@ -15,8 +15,12 @@ import com.intellij.tasks.TaskRepositoryType
 import com.intellij.tasks.impl.TaskManagerImpl
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.intellij.util.ui.UIUtil
 import kotlinx.coroutines.delay
+import java.net.ConnectException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import javax.swing.JLabel
 
 /** A slow server must not leave the work package list showing outdated rows. */
 class SlowServerTest : BasePlatformTestCase() {
@@ -66,6 +70,30 @@ class SlowServerTest : BasePlatformTestCase() {
             val slowAnswerDue = System.currentTimeMillis() + 2500
             waitFor("slow answer due") { System.currentTimeMillis() > slowAnswerDue }
             assertEquals(listOf(2L), list.loadedWorkPackages().map { it.id })
+        } finally {
+            Disposer.dispose(list)
+        }
+    }
+
+    fun `test an unreachable server shows the error without the summary of the last page`() {
+        val reachable = AtomicBoolean(true)
+        server.handler = { request ->
+            when {
+                !reachable.get() -> throw ConnectException()
+                request.url.encodedPath == "/api/v3/work_packages" -> hal(collection(workPackage(1, "first"), workPackage(2, "second")))
+                else -> notFound()
+            }
+        }
+        val list = WorkPackageListPanel(project, null, null)
+        try {
+            waitFor("rows") { list.loadedWorkPackages().size == 2 }
+            assertEquals("1–2 of 2", list.pageSummary())
+            reachable.set(false)
+            list.reload()
+            // Connection failures are retried (with backoff) for every request of the load.
+            PlatformTestUtil.waitWithEventsDispatching("error shown", { list.pageSummary().isEmpty() }, 90)
+            val texts = UIUtil.findComponentsOfType(list, JLabel::class.java).filter { it.isShowing || it.isVisible }.map { it.text.orEmpty() }
+            assertTrue(texts.toString(), texts.any { it.contains("Cannot reach the OpenProject server") && "()" !in it })
         } finally {
             Disposer.dispose(list)
         }

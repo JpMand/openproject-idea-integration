@@ -52,7 +52,11 @@ fun needsServerSettings(error: Throwable): Boolean =
 fun describeError(error: Throwable): String = when {
     error is OpenProjectApiException -> error.message ?: OpenProjectBundle.message("error.unknown")
     error is NoServerConfiguredException -> error.message!!
-    error is UnknownHostException || error is ConnectException -> OpenProjectBundle.message("error.unreachable", error.message.orEmpty())
+    error is UnknownHostException || error is ConnectException ->
+        // Some clients throw these without a message: no empty "()" then.
+        (error.message ?: error.cause?.message)?.takeIf { it.isNotBlank() }
+            ?.let { OpenProjectBundle.message("error.unreachable", it) }
+            ?: OpenProjectBundle.message("error.unreachable.plain")
     OpenProjectHttpClient.isTimeout(error) -> OpenProjectBundle.message("error.timeout")
     error is SSLException -> OpenProjectBundle.message("error.ssl", error.message.orEmpty())
     error is IOException -> OpenProjectBundle.message("error.io", error.message ?: error.javaClass.simpleName)
