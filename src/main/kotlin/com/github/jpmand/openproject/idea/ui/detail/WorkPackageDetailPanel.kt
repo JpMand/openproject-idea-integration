@@ -582,13 +582,19 @@ class WorkPackageDetailPanel(
         perform { openInEditor(controller.attachment(id)) }
     }
 
-    /** Downloads [attachment] into a temporary directory and opens it in an editor. */
+    /**
+     * Downloads [attachment] into a temporary directory and opens it in an editor. The file is looked up in the VFS
+     * (a refresh, i.e. disk access) in the background; only opening the editor runs on the EDT.
+     */
     private suspend fun openInEditor(attachment: Attachment) {
-        val directory = FileUtil.createTempDirectory("openproject-attachment", null, true)
-        val target = File(directory, attachment.fileName.replace(Regex("[\\\\/:]"), "_"))
-        target.outputStream().use { controller.download(attachment, it) }
+        val file = withContext(Dispatchers.IO) {
+            val directory = FileUtil.createTempDirectory("openproject-attachment", null, true)
+            val target = File(directory, attachment.fileName.replace(Regex("[\\\\/:]"), "_"))
+            target.outputStream().use { controller.download(attachment, it) }
+            LocalFileSystem.getInstance().refreshAndFindFileByNioFile(target.toPath())
+        } ?: return
         withContext(Dispatchers.EDT) {
-            LocalFileSystem.getInstance().refreshAndFindFileByIoFile(target)?.let { OpenFileDescriptor(project, it).navigate(true) }
+            OpenFileDescriptor(project, file).navigate(true)
         }
     }
 
