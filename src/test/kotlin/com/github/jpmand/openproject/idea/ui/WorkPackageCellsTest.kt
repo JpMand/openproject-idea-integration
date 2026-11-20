@@ -4,6 +4,7 @@ import com.github.jpmand.openproject.idea.api.Fixtures
 import com.github.jpmand.openproject.idea.api.OpenProjectApi
 import com.github.jpmand.openproject.idea.ui.common.HtmlView
 import com.github.jpmand.openproject.idea.ui.list.WorkPackageCells
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
@@ -33,6 +34,21 @@ class WorkPackageCellsTest {
         assertEquals("✓", WorkPackageCells.format(JsonPrimitive(true)))
         assertEquals("", WorkPackageCells.format(JsonPrimitive(false)))
         assertEquals("42", WorkPackageCells.format(JsonPrimitive(42)))
+    }
+
+    @Test
+    fun `milestones show their date as start and finish date`() {
+        val milestone = OpenProjectApi.decodeWorkPackage(
+            JsonObject(Fixtures.json("work_package.json") - setOf("startDate", "dueDate") + mapOf("date" to JsonPrimitive("2026-12-01"), "startDate" to JsonNull)),
+        )
+        val date = WorkPackageCells.text(milestone, "date")
+        assertTrue(date, date.contains("2026"))
+        assertEquals(date, WorkPackageCells.text(milestone, "startDate"))
+        assertEquals(date, WorkPackageCells.text(milestone, "dueDate"))
+        // Other work packages keep their own (or no) dates.
+        val task = OpenProjectApi.decodeWorkPackage(JsonObject(Fixtures.json("work_package.json") + mapOf("startDate" to JsonPrimitive("2026-11-20"), "dueDate" to JsonNull)))
+        assertEquals("", WorkPackageCells.text(task, "dueDate"))
+        assertFalse(WorkPackageCells.text(task, "startDate").contains("2026-12"))
     }
 
     private fun withProgress(done: JsonPrimitive?, derived: JsonPrimitive? = null) = OpenProjectApi.decodeWorkPackage(

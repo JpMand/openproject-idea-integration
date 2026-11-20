@@ -32,6 +32,9 @@ object WorkPackageCells {
 
     private val PERCENTAGE_COLUMNS = setOf("percentageDone", "derivedPercentageDone")
 
+    private const val MILESTONE_DATE = "date"
+    private val MILESTONE_DATE_COLUMNS = setOf("startDate", "dueDate")
+
     /** Attribute ids of the spent time and of the planned work ("Work", OpenProject's estimated time). */
     const val SPENT_TIME = "spentTime"
     const val WORK = "estimatedTime"
@@ -64,6 +67,9 @@ object WorkPackageCells {
                 return (workPackage.raw[column] as? JsonPrimitive)?.contentOrNull?.let { "$it%" }.orEmpty()
         }
         val property = workPackage.raw[column]
+            // Milestones have a single date, which OpenProject shows as their start and finish date.
+            ?.takeUnless { it is JsonNull }
+            ?: workPackage.raw[MILESTONE_DATE].takeIf { column in MILESTONE_DATE_COLUMNS }
         if (property != null && property !is JsonNull) return format(property, zone)
         val links = workPackage.links.list(column)
         return links.mapNotNull { it.title }.joinToString(", ")
