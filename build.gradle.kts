@@ -61,9 +61,7 @@ intellijPlatform {
 
     pluginVerification {
         ides {
-            providers.gradleProperty("pluginVerificationIdes").get().split(',').map { it.trim() }.forEach {
-                create(IntelliJPlatformType.IntellijIdea, it)
-            }
+            recommended()
         }
     }
 }
