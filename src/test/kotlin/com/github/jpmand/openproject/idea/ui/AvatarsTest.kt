@@ -56,6 +56,9 @@ class AvatarsTest : BasePlatformTestCase() {
         return image
     }
 
+    /** The circle's color, sampled above the initials: how far they reach to the sides depends on the font. */
+    private fun circleColor(icon: Icon) = Color(paint(icon).getRGB(8, 2))
+
     fun `test the server's avatar replaces the initials once loaded`() {
         val server = "https://op.example.com#loads"
         var loaded = 0
@@ -83,12 +86,12 @@ class AvatarsTest : BasePlatformTestCase() {
         val switchedOff = avatars.icon(server, "/api/v3/users/9", "No Avatars", 16) { connection }!!
         PlatformTestUtil.waitWithEventsDispatching("requests", { requests.any { it.url.encodedPath == "/avatar/john" } && requests.any { it.url.encodedPath == "/api/v3/users/9" } }, 10)
         PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-        // the circle in the name's color (sampled left of the initials)
-        assertEquals(Avatars.colorOf("John Smith"), Color(paint(noGravatar).getRGB(2, 8)))
-        assertEquals(Avatars.colorOf("No Avatars"), Color(paint(switchedOff).getRGB(2, 8)))
+        // the circle in the name's color
+        assertEquals(Avatars.colorOf("John Smith"), circleColor(noGravatar))
+        assertEquals(Avatars.colorOf("No Avatars"), circleColor(switchedOff))
         // groups and other principals without a link to a user: initials, no request
         val group = avatars.icon(server, null, "Developers", 16) { connection }!!
-        assertEquals(Avatars.colorOf("Developers"), Color(paint(group).getRGB(2, 8)))
+        assertEquals(Avatars.colorOf("Developers"), circleColor(group))
         assertNull(avatars.icon(server, null, null, 16) { connection })
         assertNull(avatars.icon(server, "/api/v3/projects/3", "", 16) { connection })
     }
