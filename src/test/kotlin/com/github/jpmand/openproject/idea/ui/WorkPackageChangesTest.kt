@@ -139,6 +139,8 @@ class WorkPackageChangesTest : BasePlatformTestCase() {
             waitFor("rows") { list.loadedWorkPackages().size == 2 }
             val active = list.loadedWorkPackages().single { it.id == 7L }
             ActiveWorkPackageTracker.getInstance(project).activate(OpenProjectServers.getInstance(project).servers().single(), active)
+            // The banner (and its Log Time link) shows the active task once the list has followed the activation.
+            waitFor("banner") { list.bannerWorkPackage()?.workPackageId == 7L }
             list.select(42)
             // #7 has no "logTime" link: Log Time loads it and tells that time cannot be logged, without a dialog.
             list.logTimeFromBanner()

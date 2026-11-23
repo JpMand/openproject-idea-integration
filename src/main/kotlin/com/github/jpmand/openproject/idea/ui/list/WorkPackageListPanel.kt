@@ -871,6 +871,10 @@ class WorkPackageListPanel(
     @TestOnly
     internal fun loadedWorkPackages(): List<WorkPackage> = model.items
 
+    /** The active task the banner shows: it follows task activation once the EDT has caught up. */
+    @TestOnly
+    internal fun bannerWorkPackage(): ActiveWorkPackage? = active
+
     /** "Log time…" of the active task banner. */
     @TestOnly
     internal fun logTimeFromBanner() = banner.logTimeOnActive()
