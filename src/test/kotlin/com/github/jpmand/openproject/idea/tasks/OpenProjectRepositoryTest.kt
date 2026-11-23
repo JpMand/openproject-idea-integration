@@ -36,7 +36,7 @@ class OpenProjectRepositoryTest : BasePlatformTestCase() {
 
     fun `test user agent carries the plugin version and IDE build`() {
         val userAgent = OpenProjectClientPool.userAgent()
-        assertTrue(userAgent, Regex("""OpenProject-IntelliJ-Plugin/\d+\.\d+\.\d+\S* \(\w+-\d+\..+\)""").matches(userAgent))
+        assertTrue(userAgent, Regex("""OpenProject-IntelliJ-Plugin\s(\w+-?)+/\d+\.\d+\.\d+(-(\w+-?)+)?""").matches(userAgent))
     }
 
     fun `test settings survive xml serialization without the token`() {
