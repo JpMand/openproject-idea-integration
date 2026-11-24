@@ -557,11 +557,13 @@ class WorkPackageDetailPanel(
         upload(files.map { File(it.path) })
     }
 
+    /** Uploads [files]; anything that is not a file (e.g. a dropped folder) is skipped. Disk access happens off the EDT. */
     private fun upload(files: List<File>) {
         if (files.isEmpty()) return
         perform {
             files.forEach { file ->
-                controller.upload(file.name, URLConnection.guessContentTypeFromName(file.name), file.readBytes())
+                val bytes = withContext(Dispatchers.IO) { file.takeIf(File::isFile)?.readBytes() } ?: return@forEach
+                controller.upload(file.name, URLConnection.guessContentTypeFromName(file.name), bytes)
             }
         }
     }
@@ -571,7 +573,7 @@ class WorkPackageDetailPanel(
             .createSaveFileDialog(FileSaverDescriptor(OpenProjectBundle.message("detail.files.download"), ""), project)
             .save(attachment.fileName)?.file ?: return
         perform {
-            target.outputStream().use { controller.download(attachment, it) }
+            withContext(Dispatchers.IO) { target.outputStream().use { controller.download(attachment, it) } }
             withContext(Dispatchers.EDT) { notify(OpenProjectBundle.message("detail.files.downloaded", attachment.fileName), NotificationType.INFORMATION) }
         }
     }
@@ -662,10 +664,11 @@ class WorkPackageDetailPanel(
             val src = imageSource.find(tag.value)?.groupValues?.get(1) ?: return@fold result
             val absolute = if (src.startsWith("/")) origin + src else src
             if (!absolute.startsWith(origin)) return@fold result
-            val local = images[absolute] ?: File(imageDirectory, "img${images.size}").also { target ->
-                target.outputStream().use { controller.connection().api.download(absolute, it) }
-                images[absolute] = target
-            }
+            val local = images[absolute] ?: withContext(Dispatchers.IO) {
+                File(imageDirectory, "img${images.size}").also { target ->
+                    target.outputStream().use { controller.connection().api.download(absolute, it) }
+                }
+            }.also { images[absolute] = it }
             result.replace(tag.value, tag.value.replace(src, local.toURI().toString()))
         }
     }

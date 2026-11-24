@@ -99,7 +99,8 @@ class FilesPanel(
                 if (!canImport(support)) return false
                 @Suppress("UNCHECKED_CAST")
                 val files = support.transferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<File> ?: return false
-                onUploadFiles(files.filter(File::isFile))
+                // Folders are skipped by the upload, in the background: no disk access on the EDT.
+                onUploadFiles(files)
                 return true
             }
         }
