@@ -18,6 +18,7 @@ import com.github.jpmand.openproject.idea.core.OpenProjectServer
 import com.github.jpmand.openproject.idea.core.WorkPackageChange
 import com.github.jpmand.openproject.idea.core.WorkPackageChangesListener
 import com.github.jpmand.openproject.idea.core.connect
+import com.github.jpmand.openproject.idea.core.runCatchingUnlessCancelled
 import com.github.jpmand.openproject.idea.ui.WorkPackageRef
 import com.github.jpmand.openproject.idea.ui.common.StatusColors
 import com.intellij.openapi.project.Project
@@ -102,20 +103,20 @@ class WorkPackageDetailController(private val project: Project, private val serv
         val api = connection.api
         val workPackage = api.workPackage(workPackageId)
         val schema = async {
-            workPackage.links.href("schema")?.let { href -> runCatching { connection.cached("schema:$href", 30.minutes) { api.workPackageSchema(href) } }.getOrNull() }
+            workPackage.links.href("schema")?.let { href -> runCatchingUnlessCancelled { connection.cached("schema:$href", 30.minutes) { api.workPackageSchema(href) } }.getOrNull() }
         }
-        val activities = async { runCatching { api.activities(workPackage) }.getOrDefault(emptyList()) }
-        val relations = async { runCatching { api.relations(workPackage) }.getOrDefault(emptyList()) }
-        val attachments = async { runCatching { api.attachments(workPackage) }.getOrDefault(emptyList()) }
-        val statusColors = async { runCatching { StatusColors.of(connection.statuses()) }.getOrDefault(emptyMap()) }
-        val typeColors = async { runCatching { StatusColors.ofTypes(connection.types()) }.getOrDefault(emptyMap()) }
+        val activities = async { runCatchingUnlessCancelled { api.activities(workPackage) }.getOrDefault(emptyList()) }
+        val relations = async { runCatchingUnlessCancelled { api.relations(workPackage) }.getOrDefault(emptyList()) }
+        val attachments = async { runCatchingUnlessCancelled { api.attachments(workPackage) }.getOrDefault(emptyList()) }
+        val statusColors = async { runCatchingUnlessCancelled { StatusColors.of(connection.statuses()) }.getOrDefault(emptyMap()) }
+        val typeColors = async { runCatchingUnlessCancelled { StatusColors.ofTypes(connection.types()) }.getOrDefault(emptyMap()) }
         val formSchema = async {
             if (!workPackage.links.has("update") && !workPackage.links.has("updateImmediately")) return@async null
-            runCatching { api.workPackageForm(workPackage, WorkPackagePatch(workPackage.lockVersion)).schema }.getOrNull()
+            runCatchingUnlessCancelled { api.workPackageForm(workPackage, WorkPackagePatch(workPackage.lockVersion)).schema }.getOrNull()
         }
         val loadedActivities = activities.await()
         val userNames = loadedActivities.mapNotNull { it.links.href("user") }.distinct()
-            .map { href -> async { href to runCatching { connection.cached("principal:$href", 60.minutes) { api.getJson(href) } }.getOrNull() } }
+            .map { href -> async { href to runCatchingUnlessCancelled { connection.cached("principal:$href", 60.minutes) { api.getJson(href) } }.getOrNull() } }
             .mapNotNull { pending ->
                 val (href, json) = pending.await()
                 ((json?.get("name") as? JsonPrimitive)?.contentOrNull)?.let { href to it }

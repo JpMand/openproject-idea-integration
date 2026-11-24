@@ -20,6 +20,7 @@ import com.github.jpmand.openproject.idea.core.WorkPackageChange
 import com.github.jpmand.openproject.idea.core.WorkPackageChangesListener
 import com.github.jpmand.openproject.idea.core.connect
 import com.github.jpmand.openproject.idea.core.describeError
+import com.github.jpmand.openproject.idea.core.runCatchingUnlessCancelled
 import com.github.jpmand.openproject.idea.ui.OpenProjectDataKeys
 import com.github.jpmand.openproject.idea.ui.WorkPackageRef
 import com.github.jpmand.openproject.idea.ui.common.Avatars
@@ -341,7 +342,7 @@ class WorkPackageListPanel(
             this.server = server
             this.connection = connection
             val loadedMetadata = ListMetadata.load(connection)
-            runCatching { connection.configuration().perPageOptions }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { pageSizes = it }
+            runCatchingUnlessCancelled { connection.configuration().perPageOptions }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { pageSizes = it }
             val metadataChanged = loadedMetadata !== metadata
             metadata = loadedMetadata
             val page = connection.api.workPackages(query)
@@ -434,7 +435,7 @@ class WorkPackageListPanel(
     private fun loadSavedViews(connection: OpenProjectConnection) {
         savedViewsLoaded = true
         cs.launch {
-            val queries = runCatching { connection.api.queries() }.getOrNull() ?: return@launch
+            val queries = runCatchingUnlessCancelled { connection.api.queries() }.getOrNull() ?: return@launch
             withContext(Dispatchers.EDT) {
                 savedQueries = queries
                 syncing = true
@@ -911,9 +912,9 @@ class WorkPackageListPanel(
 
     /** The colors of statuses, types and priorities (cached by the connection); a failing one is left out. */
     private suspend fun loadColumnColors(connection: OpenProjectConnection): Map<String, Map<Long, Color>> = coroutineScope {
-        val statuses = async { runCatching { StatusColors.of(connection.statuses()) }.getOrNull() }
-        val types = async { runCatching { StatusColors.ofTypes(connection.types()) }.getOrNull() }
-        val priorities = async { runCatching { StatusColors.ofPriorities(connection.priorities()) }.getOrNull() }
+        val statuses = async { runCatchingUnlessCancelled { StatusColors.of(connection.statuses()) }.getOrNull() }
+        val types = async { runCatchingUnlessCancelled { StatusColors.ofTypes(connection.types()) }.getOrNull() }
+        val priorities = async { runCatchingUnlessCancelled { StatusColors.ofPriorities(connection.priorities()) }.getOrNull() }
         mapOf("status" to statuses.await(), "type" to types.await(), "priority" to priorities.await())
             .mapNotNull { (column, colors) -> colors?.let { column to it } }
             .toMap()

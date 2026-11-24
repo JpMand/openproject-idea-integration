@@ -6,6 +6,7 @@ import com.github.jpmand.openproject.idea.api.OpenProjectHttpClient
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +36,18 @@ class OpenProjectProjectScope(val cs: CoroutineScope) {
  * coroutines library of 2026.1 and 2026.2 does not have (NoSuchMethodError there); `cancel(null)` works on all of them.
  */
 fun Job.cancelJob() = cancel(null)
+
+/**
+ * [runCatching] for suspending code: a failure becomes a [Result], but cancellation (also `ProcessCanceledException`)
+ * is rethrown, so that a cancelled coroutine stops instead of going on with a fallback value.
+ */
+inline fun <T> runCatchingUnlessCancelled(block: () -> T): Result<T> = try {
+    Result.success(block())
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    Result.failure(e)
+}
 
 class NoServerConfiguredException : Exception(OpenProjectBundle.message("error.no.server"))
 

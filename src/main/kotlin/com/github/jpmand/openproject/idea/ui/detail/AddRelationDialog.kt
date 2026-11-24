@@ -4,6 +4,7 @@ import com.github.jpmand.openproject.idea.OpenProjectBundle
 import com.github.jpmand.openproject.idea.api.model.WorkPackage
 import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
 import com.github.jpmand.openproject.idea.core.cancelJob
+import com.github.jpmand.openproject.idea.core.runCatchingUnlessCancelled
 import com.github.jpmand.openproject.idea.ui.common.DIALOG_UI
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
@@ -108,7 +109,7 @@ class AddRelationDialog(
         candidateList.setPaintBusy(true)
         searchJob = cs.launch {
             delay(250)
-            val result = searchSafely { search(query, type) }
+            val result = runCatchingUnlessCancelled { search(query, type) }
             val found = result.getOrDefault(emptyList())
             withContext(DIALOG_UI) {
                 candidateList.setPaintBusy(false)

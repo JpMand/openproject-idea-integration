@@ -6,6 +6,7 @@ import com.github.jpmand.openproject.idea.api.model.WorkPackage
 import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
 import com.github.jpmand.openproject.idea.core.cancelJob
 import com.github.jpmand.openproject.idea.core.describeError
+import com.github.jpmand.openproject.idea.core.runCatchingUnlessCancelled
 import com.github.jpmand.openproject.idea.ui.common.DIALOG_UI
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
@@ -21,7 +22,6 @@ import com.intellij.ui.dsl.builder.Align
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.listCellRenderer.textListCellRenderer
 import com.intellij.util.ui.JBUI
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -103,7 +103,7 @@ class ChooseWorkPackageDialog(
         candidateList.setPaintBusy(true)
         searchJob = cs.launch {
             delay(250)
-            val result = searchSafely { search(query) }
+            val result = runCatchingUnlessCancelled { search(query) }
             val found = result.getOrDefault(emptyList()).map { workPackage ->
                 HalLink(href = workPackage.links.href("self") ?: "/api/v3/work_packages/${workPackage.id}", title = "#${workPackage.id} ${workPackage.subject}")
             }
@@ -123,15 +123,6 @@ class ChooseWorkPackageDialog(
 
     @TestOnly
     internal fun emptyText(): String = candidateList.emptyText.text
-}
-
-/** Runs a search, keeping its failure (server unreachable, ...) to be shown instead of the results; never swallows cancellation. */
-internal suspend fun <T> searchSafely(search: suspend () -> T): Result<T> = try {
-    Result.success(search())
-} catch (e: CancellationException) {
-    throw e
-} catch (e: Exception) {
-    Result.failure(e)
 }
 
 /** The text of an empty result list: no matches, or why the search failed. */

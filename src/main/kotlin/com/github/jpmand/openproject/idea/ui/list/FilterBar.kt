@@ -3,6 +3,7 @@ package com.github.jpmand.openproject.idea.ui.list
 import com.github.jpmand.openproject.idea.OpenProjectBundle
 import com.github.jpmand.openproject.idea.api.FilterSpec
 import com.github.jpmand.openproject.idea.api.Filters
+import com.github.jpmand.openproject.idea.core.runCatchingUnlessCancelled
 import com.github.jpmand.openproject.idea.ui.common.swatchListRenderer
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.EDT
@@ -168,7 +169,7 @@ class FilterBar(
         val link = ActionLink(describe(filter.values, emptyList())) {}
         // Show titles instead of ids once the options are loaded.
         cs.launch {
-            val options = runCatching { loadOptions(meta, filter.operator, element) }.getOrNull() ?: return@launch
+            val options = runCatchingUnlessCancelled { loadOptions(meta, filter.operator, element) }.getOrNull() ?: return@launch
             withContext(Dispatchers.EDT) { link.text = describe(filter.values, options) }
         }
         var choosing: Job? = null

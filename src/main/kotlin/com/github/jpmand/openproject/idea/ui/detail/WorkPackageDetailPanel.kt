@@ -10,6 +10,7 @@ import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
 import com.github.jpmand.openproject.idea.core.WorkPackageChangesListener
 import com.github.jpmand.openproject.idea.core.cancelJob
 import com.github.jpmand.openproject.idea.core.describeError
+import com.github.jpmand.openproject.idea.core.runCatchingUnlessCancelled
 import com.github.jpmand.openproject.idea.ui.OpenProjectDataKeys
 import com.github.jpmand.openproject.idea.ui.common.Avatars
 import com.github.jpmand.openproject.idea.ui.common.HtmlView
@@ -206,7 +207,7 @@ class WorkPackageDetailPanel(
             if (controller.details.value == null) withContext(Dispatchers.EDT) { status.loading() }
             try {
                 controller.load()
-                internalCommentsAvailable = runCatching { "internal_comments" in controller.connection().configuration().availableFeatures }.getOrDefault(false)
+                internalCommentsAvailable = runCatchingUnlessCancelled { "internal_comments" in controller.connection().configuration().availableFeatures }.getOrDefault(false)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -361,7 +362,7 @@ class WorkPackageDetailPanel(
             descriptionView.setHtml(withoutImages(html))
             descriptionPanel.add(descriptionView)
             cs.launch {
-                val resolved = runCatching { resolveImages(html) }.getOrNull() ?: return@launch
+                val resolved = runCatchingUnlessCancelled { resolveImages(html) }.getOrNull() ?: return@launch
                 if (resolved != html) withContext(Dispatchers.EDT) { if (!editingDescription) descriptionView.setHtml(resolved) }
             }
         }

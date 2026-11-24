@@ -3,6 +3,7 @@ package com.github.jpmand.openproject.idea.ui.list
 import com.github.jpmand.openproject.idea.OpenProjectBundle
 import com.github.jpmand.openproject.idea.api.FilterSpec
 import com.github.jpmand.openproject.idea.api.Filters
+import com.github.jpmand.openproject.idea.core.runCatchingUnlessCancelled
 import com.github.jpmand.openproject.idea.ui.common.swatchListRenderer
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.ui.popup.JBPopupFactory
@@ -111,7 +112,7 @@ class QuickFilterLink(
     fun loadTitles() {
         if (options != null || loadingTitles?.isActive == true || current.none { filter -> filter.values.any { it != "me" } }) return
         loadingTitles = cs.launch {
-            val loaded = runCatching { loadOptions(def.elementType) }.getOrNull() ?: return@launch
+            val loaded = runCatchingUnlessCancelled { loadOptions(def.elementType) }.getOrNull() ?: return@launch
             withContext(Dispatchers.EDT) {
                 options = loaded
                 render()
