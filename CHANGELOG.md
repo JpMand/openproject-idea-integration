@@ -1,7 +1,17 @@
 <!-- Keep a Changelog guide -> https://keepachangelog.com -->
 
-# openproject-idea-integraiton Changelog
+# OpenProject Integration Changelog
 
 ## [Unreleased]
+
+First release: browse, edit and track OpenProject work packages without leaving the IDE. Requires IntelliJ IDEA
+2026.1 or later with the Issue Trackers plugin, OpenProject 15 or later and an OpenProject API token.
+
 ### Added
-- Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
+
+- Tasks integration: OpenProject task server for Tools | Tasks & Contexts
+- Time logging with the Log Time dialog
+- Work package lists in the OpenProject tool window
+- Search, quick filters, server filters and saved views
+- Work package preview and detail tab with editing, comments, relations and files
+- Active work package in the status bar

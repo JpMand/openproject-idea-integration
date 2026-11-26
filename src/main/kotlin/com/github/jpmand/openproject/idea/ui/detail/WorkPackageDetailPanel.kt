@@ -1,0 +1,729 @@
+package com.github.jpmand.openproject.idea.ui.detail
+
+import com.github.jpmand.openproject.idea.OpenProjectBundle
+import com.github.jpmand.openproject.idea.actions.notifyError
+import com.github.jpmand.openproject.idea.api.hal.HalLink
+import com.github.jpmand.openproject.idea.api.model.Attachment
+import com.github.jpmand.openproject.idea.api.model.WorkPackage
+import com.github.jpmand.openproject.idea.core.ActiveWorkPackageTracker
+import com.github.jpmand.openproject.idea.core.OpenProjectProjectScope
+import com.github.jpmand.openproject.idea.core.WorkPackageChangesListener
+import com.github.jpmand.openproject.idea.core.cancelJob
+import com.github.jpmand.openproject.idea.core.describeError
+import com.github.jpmand.openproject.idea.core.runCatchingUnlessCancelled
+import com.github.jpmand.openproject.idea.ui.OpenProjectDataKeys
+import com.github.jpmand.openproject.idea.ui.common.Avatars
+import com.github.jpmand.openproject.idea.ui.common.HtmlView
+import com.github.jpmand.openproject.idea.ui.common.MarkdownField
+import com.github.jpmand.openproject.idea.ui.common.ScrollableColumnPanel
+import com.github.jpmand.openproject.idea.ui.common.StatusBadge
+import com.github.jpmand.openproject.idea.ui.common.StatusPanel
+import com.github.jpmand.openproject.idea.ui.common.TitleLayout
+import com.github.jpmand.openproject.idea.ui.common.swatchListRenderer
+import com.github.jpmand.openproject.idea.ui.list.WorkPackageCells
+import com.github.jpmand.openproject.idea.ui.toolwindow.OpenProjectToolWindowManager
+import com.intellij.icons.AllIcons
+import com.intellij.openapi.Disposable
+import com.intellij.notification.NotificationAction
+import com.intellij.notification.NotificationGroupManager
+import com.intellij.notification.NotificationType
+import com.intellij.openapi.actionSystem.ActionGroup
+import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.ActionUpdateThread
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.actionSystem.Separator
+import com.intellij.openapi.actionSystem.UiDataProvider
+import com.intellij.openapi.application.EDT
+import com.intellij.openapi.fileChooser.FileChooser
+import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
+import com.intellij.openapi.fileChooser.FileChooserFactory
+import com.intellij.openapi.fileChooser.FileSaverDescriptor
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.project.DumbAwareAction
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.util.io.FileUtil
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.ui.InplaceButton
+import com.intellij.ui.JBColor
+import com.intellij.ui.OnePixelSplitter
+import com.intellij.ui.components.ActionLink
+import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.components.JBTabbedPane
+import com.intellij.ui.components.JBTextArea
+import com.intellij.ui.components.JBTextField
+import com.intellij.util.ui.JBFont
+import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
+import com.intellij.util.ui.WrapLayout
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonElement
+import org.jetbrains.annotations.TestOnly
+import java.awt.BorderLayout
+import java.awt.Color
+import java.awt.Dimension
+import java.awt.Cursor
+import java.awt.FlowLayout
+import java.awt.event.KeyAdapter
+import java.awt.event.KeyEvent
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
+import java.io.File
+import java.net.URLConnection
+import java.util.concurrent.ConcurrentHashMap
+import javax.swing.Box
+import javax.swing.JButton
+import javax.swing.Icon
+import javax.swing.JComponent
+import javax.swing.JPanel
+import javax.swing.SwingConstants
+import javax.swing.SwingUtilities
+
+/**
+ * One work package: editable subject, status, description and attributes, plus its activity (with a comment box),
+ * relations and files. [Layout.PREVIEW] stacks everything vertically (the preview next to the work package list);
+ * [Layout.TAB] puts subject, description and properties on the left and the activity/relations/files tabs on the
+ * right (a tool window tab of its own).
+ */
+class WorkPackageDetailPanel(
+    private val project: Project,
+    val serverId: String,
+    val workPackageId: Long,
+    private val layout: Layout,
+    /** Called with "#12 Subject" whenever the work package is (re)loaded. */
+    private val onTitle: (String) -> Unit = {},
+    /** Shows a close button in the toolbar (the preview). */
+    private val onClose: (() -> Unit)? = null,
+) : JPanel(BorderLayout()), Disposable {
+
+    enum class Layout { PREVIEW, TAB }
+
+    private val cs = OpenProjectProjectScope.getInstance(project).childScope("WorkPackageDetailPanel")
+
+    val controller = WorkPackageDetailController(project, serverId, workPackageId)
+
+    private var loadJob: Job? = null
+    private var choosing = false
+    private var editingDescription = false
+    private var internalCommentsAvailable = false
+    private val imageDirectory by lazy { FileUtil.createTempDirectory("openproject-images", null, true) }
+    private val images = ConcurrentHashMap<String, File>()
+
+    private val status = StatusPanel()
+    private val content = JPanel(BorderLayout())
+
+    // header: hierarchy, then type, id and subject, then status, author and last update
+    private val hierarchyRow = JPanel(WrapLayout(FlowLayout.LEFT, 0, 0)).apply { isOpaque = false }
+    private val idLabel = JBLabel().apply { font = JBFont.h2(); foreground = UIUtil.getContextHelpForeground() }
+    private val subjectText = SubjectText()
+    private val subjectEdit = InplaceButton(OpenProjectBundle.message("detail.subject.edit"), AllIcons.Actions.Edit) { editSubject() }
+    private val subjectRow = JPanel(TitleLayout()).apply { isOpaque = false }
+    private val typeBadge = dropDownBadge("type") { chooseType(it) }
+    private val typeAndId = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
+        isOpaque = false
+        add(typeBadge)
+        add(Box.createRigidArea(Dimension(JBUI.scale(8), 0)))
+        add(idLabel)
+    }
+    private val statusBadge = dropDownBadge("status") { chooseStatus(it) }
+    private val createdLabel = JBLabel().apply { foreground = UIUtil.getContextHelpForeground() }
+    private val updatedLabel = JBLabel().apply { foreground = UIUtil.getContextHelpForeground() }
+    private val activeBadge = JBLabel(OpenProjectBundle.message("detail.active.task"), AllIcons.Vcs.History, JBLabel.LEFT).apply {
+        foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
+        isVisible = false
+    }
+
+    // description
+    private val descriptionView = html()
+    private val descriptionEditLink = ActionLink(OpenProjectBundle.message("detail.description.edit")) { editDescription() }
+    private val descriptionPanel = JPanel(BorderLayout()).apply { isOpaque = false }
+
+    // tabs and properties
+    private val activityPanel = ActivityPanel(project, ::html, avatar = { href, name -> avatar(href, name, 20) }) { text, internal, done ->
+        comment(text, internal, done)
+    }
+    private val relationsPanel = RelationsPanel(
+        onOpen = { id -> OpenProjectToolWindowManager.getInstance(project).openWorkPackage(serverId, id) },
+        onDelete = { relation -> perform { controller.deleteRelation(relation) } },
+        onAdd = ::addRelation,
+    )
+    private val filesPanel = FilesPanel(
+        onUpload = ::chooseAndUpload,
+        onUploadFiles = ::upload,
+        onDownload = ::download,
+        onOpen = ::openAttachment,
+        onDelete = { attachment -> perform { controller.deleteAttachment(attachment) } },
+    )
+    private val tabs = JBTabbedPane()
+    private val properties = PropertiesPanel(::chooseValue, ::saveProperty) { href, name -> avatar(href, name) }
+
+    init {
+        add(UiDataProvider.wrapComponent(JPanel(BorderLayout()).apply {
+            add(toolbar(), BorderLayout.NORTH)
+            add(content, BorderLayout.CENTER)
+        }) { sink ->
+            sink[OpenProjectDataKeys.WORK_PACKAGE] = controller.details.value?.ref
+            sink[OpenProjectDataKeys.REFRESHER] = Runnable { reload() }
+        }, BorderLayout.CENTER)
+    }
+
+    init {
+        content.add(status, BorderLayout.CENTER)
+        tabs.addTab(OpenProjectBundle.message("detail.tab.activity"), scrolled(activityPanel))
+        tabs.addTab(OpenProjectBundle.message("detail.tab.relations"), scrolled(relationsPanel))
+        tabs.addTab(OpenProjectBundle.message("detail.tab.files"), filesPanel.apply { border = JBUI.Borders.empty(8, 12) })
+        // Avatars arrive after the page is shown.
+        Avatars.getInstance().addListener(this) { content.repaint() }
+        reload()
+        cs.launch {
+            controller.details.collect { details ->
+                if (details != null) withContext(Dispatchers.EDT) { show(details) }
+            }
+        }
+        cs.launch {
+            ActiveWorkPackageTracker.getInstance(project).active.collect { active ->
+                withContext(Dispatchers.EDT) {
+                    activeBadge.isVisible = active?.serverId == serverId && active.workPackageId == workPackageId
+                }
+            }
+        }
+        // Changed elsewhere (another page of it, Log Time, a task status update): this page loads it again.
+        project.messageBus.connect(this).subscribe(WorkPackageChangesListener.TOPIC, WorkPackageChangesListener { change ->
+            if (change.serverId == serverId && change.workPackageId == workPackageId && change.source !== controller) reload()
+        })
+    }
+
+    fun reload() {
+        loadJob?.cancelJob()
+        loadJob = cs.launch {
+            if (controller.details.value == null) withContext(Dispatchers.EDT) { status.loading() }
+            try {
+                controller.load()
+                internalCommentsAvailable = runCatchingUnlessCancelled { "internal_comments" in controller.connection().configuration().availableFeatures }.getOrDefault(false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                withContext(Dispatchers.EDT) {
+                    if (controller.details.value == null) {
+                        content.removeAll()
+                        content.add(status, BorderLayout.CENTER)
+                        status.error(project, e) { reload() }
+                        content.revalidate()
+                    } else {
+                        notifyError(project, describeError(e), e)
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- rendering ----
+
+    private fun show(details: WorkPackageDetails) {
+        val workPackage = details.workPackage
+        onTitle("${workPackage.presentableId} ${workPackage.subject}")
+        if (content.getComponent(0) === status) {
+            content.removeAll()
+            content.add(page(), BorderLayout.CENTER)
+        }
+        showHierarchy(workPackage)
+        idLabel.text = workPackage.presentableId
+        showSubject(workPackage)
+        showBadge(typeBadge, workPackage.typeTitle, details.typeColor, canChange(details, "type"), "detail.type.change")
+        showBadge(statusBadge, workPackage.statusTitle, details.statusColor, canChange(details, "status"), "detail.status.change")
+        val author = workPackage.authorTitle?.takeIf(String::isNotBlank)
+        createdLabel.text = author?.let { OpenProjectBundle.message("detail.created.by", it) }
+        createdLabel.icon = author?.let { avatar(workPackage.links.href("author"), it) }
+        createdLabel.isVisible = author != null
+        val updated = WorkPackageCells.text(workPackage, "updatedAt").takeIf(String::isNotBlank)
+        updatedLabel.text = updated?.let { OpenProjectBundle.message("detail.updated.on", it) }
+        updatedLabel.isVisible = updated != null
+        if (!editingDescription) showDescription(workPackage)
+        descriptionEditLink.isVisible = details.canEdit && !editingDescription
+        activityPanel.show(details.activities, details.userNames, details.canComment, internalCommentsAvailable)
+        relationsPanel.show(workPackage, details.relations, details.canRelate)
+        filesPanel.show(details.attachments, details.canAttach)
+        tabs.setTitleAt(0, OpenProjectBundle.message("detail.tab.activity.count", details.activities.count { it.isComment }))
+        tabs.setTitleAt(1, OpenProjectBundle.message("detail.tab.relations.count", RelationsPanel.related(workPackage, details.relations).size))
+        tabs.setTitleAt(2, OpenProjectBundle.message("detail.tab.files.count", details.attachments.size))
+        properties.show(details)
+        content.revalidate()
+        content.repaint()
+    }
+
+    private fun page(): JComponent {
+        // Each row is measured at the page width, so rows that wrap in a narrow page keep their full height.
+        val main = ScrollableColumnPanel().apply {
+            border = JBUI.Borders.empty(10, 14)
+            add(hierarchyRow)
+            add(subjectRow.apply { border = JBUI.Borders.emptyTop(4) })
+            // Separate labels, so that a narrow page wraps between them.
+            add(row(statusBadge, createdLabel, updatedLabel).apply { border = JBUI.Borders.emptyTop(4) })
+            add(row(JBLabel(OpenProjectBundle.message("detail.description")).apply { font = JBFont.h4().asBold() }, descriptionEditLink).apply {
+                border = JBUI.Borders.emptyTop(14)
+            })
+            add(descriptionPanel)
+            add(properties.apply { border = JBUI.Borders.emptyTop(14) })
+        }
+        // As wide as the visible area, so that rows wrap and the properties take fewer columns when the page gets narrower.
+        val left = JBScrollPane(main).apply { border = JBUI.Borders.empty() }
+        return when (layout) {
+            Layout.PREVIEW -> OnePixelSplitter(true, "OpenProject.Preview.Split", 0.55f).apply {
+                firstComponent = left
+                secondComponent = tabs
+            }
+            Layout.TAB -> OnePixelSplitter(false, "OpenProject.WorkPackageTab.Split", 0.55f).apply {
+                firstComponent = left
+                secondComponent = tabs
+            }
+        }
+    }
+
+    /** As wide as the tab: comments and changes wrap instead of scrolling sideways. */
+    private fun scrolled(component: JComponent): JComponent = ScrollableColumnPanel.scrollPane(component, JBUI.Borders.empty(8, 12))
+
+    /** Left-aligned components with a gap after each (no leading gap, unlike FlowLayout's hgap); wraps when narrow. */
+    private fun row(vararg components: JComponent): JPanel = JPanel(WrapLayout(FlowLayout.LEFT, 0, 0)).apply {
+        isOpaque = false
+        // Gaps as spacers: the components keep their own borders (the status badge paints its padding).
+        components.forEach {
+            add(it)
+            add(Box.createRigidArea(Dimension(JBUI.scale(12), 0)))
+        }
+    }
+
+    /** "#621 User Management / #682 User Creation / #685 Create user button", each opening its work package in a tab. */
+    private fun showHierarchy(workPackage: WorkPackage) {
+        hierarchyRow.removeAll()
+        WorkPackageHierarchy.of(workPackage).forEachIndexed { index, item ->
+            if (index > 0) hierarchyRow.add(JBLabel(" / ").apply { foreground = UIUtil.getContextHelpForeground() })
+            val id = item.workPackageId
+            hierarchyRow.add(if (id == null) {
+                JBLabel(item.text).apply { foreground = UIUtil.getContextHelpForeground() }
+            } else {
+                ActionLink(item.text) { OpenProjectToolWindowManager.getInstance(project).openWorkPackage(serverId, id) }.apply {
+                    toolTipText = OpenProjectBundle.message("detail.hierarchy.open")
+                }
+            })
+        }
+        hierarchyRow.add(Box.createRigidArea(Dimension(JBUI.scale(12), 0)))
+        hierarchyRow.add(activeBadge)
+        hierarchyRow.revalidate()
+    }
+
+    /** Type badge and id, then the subject (or [subjectEditor] while the subject is edited), which wraps when long. */
+    private fun showSubject(workPackage: WorkPackage, subjectEditor: JComponent? = null) {
+        subjectRow.removeAll()
+        subjectText.text = workPackage.subject
+        subjectRow.add(typeAndId, TitleLayout.LEADING)
+        subjectRow.add(subjectEditor ?: subjectText, TitleLayout.TEXT)
+        if (subjectEditor == null && controller.details.value?.canEdit == true) subjectRow.add(subjectEdit, TitleLayout.TRAILING)
+        subjectRow.revalidate()
+        subjectRow.repaint()
+    }
+
+    /** A colored badge like OpenProject's status bubble; clicking it opens [choose] when the attribute can be changed. */
+    private fun dropDownBadge(attribute: String, choose: (JComponent) -> Unit): StatusBadge = StatusBadge().apply {
+        horizontalTextPosition = SwingConstants.LEFT
+        addMouseListener(object : MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent) {
+                val details = controller.details.value ?: return
+                if (canChange(details, attribute) && SwingUtilities.isLeftMouseButton(e)) choose(this@apply)
+            }
+        })
+    }
+
+    private fun showBadge(badge: StatusBadge, text: String?, color: Color?, editable: Boolean, tooltipKey: String) {
+        badge.text = text ?: "?"
+        badge.color = color
+        badge.icon = if (editable) AllIcons.General.ChevronDown else null
+        badge.cursor = if (editable) Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) else Cursor.getDefaultCursor()
+        badge.toolTipText = if (editable) OpenProjectBundle.message(tooltipKey) else null
+    }
+
+    /** The user may edit the work package and the schema (when loaded) does not mark [attribute] read-only. */
+    private fun canChange(details: WorkPackageDetails, attribute: String): Boolean =
+        details.canEdit && details.field(attribute)?.writable != false
+
+    private fun showDescription(workPackage: WorkPackage) {
+        descriptionPanel.removeAll()
+        val html = workPackage.description?.html
+        if (html.isNullOrBlank()) {
+            descriptionPanel.add(JBLabel(OpenProjectBundle.message("detail.description.empty")).apply { foreground = UIUtil.getContextHelpForeground() })
+        } else {
+            descriptionView.setHtml(withoutImages(html))
+            descriptionPanel.add(descriptionView)
+            cs.launch {
+                val resolved = runCatchingUnlessCancelled { resolveImages(html) }.getOrNull() ?: return@launch
+                if (resolved != html) withContext(Dispatchers.EDT) { if (!editingDescription) descriptionView.setHtml(resolved) }
+            }
+        }
+        descriptionPanel.revalidate()
+    }
+
+    // ---- editing ----
+
+    private fun editSubject() {
+        val workPackage = controller.details.value?.workPackage ?: return
+        val field = JBTextField(workPackage.subject).apply { font = JBFont.h3() }
+        showSubject(workPackage, field)
+        field.requestFocusInWindow()
+        field.selectAll()
+        fun finish(save: Boolean) {
+            val text = field.text.trim()
+            if (save && text.isNotEmpty() && text != workPackage.subject) {
+                perform { controller.update { it.subject(text) } }
+            }
+            showSubject(controller.details.value?.workPackage ?: workPackage)
+        }
+        field.addKeyListener(object : KeyAdapter() {
+            override fun keyPressed(e: KeyEvent) {
+                when (e.keyCode) {
+                    KeyEvent.VK_ENTER -> finish(save = true)
+                    KeyEvent.VK_ESCAPE -> finish(save = false)
+                }
+            }
+        })
+    }
+
+    private fun chooseStatus(anchor: JComponent) {
+        chooseOnce {
+            val statuses = controller.allowedStatuses()
+            val colors = controller.details.value?.statusColors.orEmpty()
+            withContext(Dispatchers.EDT) {
+                choose(anchor, statuses, color = { it.id?.toLongOrNull()?.let(colors::get) }) { status ->
+                    perform { controller.update { it.link("status", status.href) } }
+                }
+            }
+        }
+    }
+
+    private fun chooseType(anchor: JComponent) {
+        chooseOnce {
+            val types = controller.allowedTypes()
+            val colors = controller.details.value?.typeColors.orEmpty()
+            withContext(Dispatchers.EDT) {
+                choose(anchor, types, color = { it.id?.toLongOrNull()?.let(colors::get) }) { type ->
+                    perform { controller.update { it.link("type", type.href) } }
+                }
+            }
+        }
+    }
+
+    /** Changes a linked attribute of the properties section: a dropdown, a multiple choice or a work package search. */
+    private fun chooseValue(attribute: String, kind: EditorKind, anchor: JComponent) {
+        val details = controller.details.value ?: return
+        val field = details.field(attribute)
+        val name = field?.name ?: attribute
+        val unset = HalLink(href = null, title = OpenProjectBundle.message("detail.unassigned"))
+        when (kind) {
+            EditorKind.WORK_PACKAGE -> {
+                val dialog = ChooseWorkPackageDialog(project, OpenProjectBundle.message("detail.choose.title", name), allowNone = field?.required != true) {
+                    controller.searchWorkPackages(it)
+                }
+                if (dialog.showAndGet()) {
+                    val chosen = dialog.chosen()
+                    perform { controller.update { it.link(attribute, chosen.href) } }
+                }
+            }
+            EditorKind.LINKS -> chooseOnce {
+                val options = controller.allowedOptions(attribute)
+                withContext(Dispatchers.EDT) {
+                    val selected = details.workPackage.links.list(attribute).mapNotNull { it.href }.toSet()
+                    val dialog = ChooseValuesDialog(project, OpenProjectBundle.message("detail.choose.title", name), options, selected)
+                    if (dialog.showAndGet()) {
+                        val chosen = dialog.chosen()
+                        perform { controller.update { it.links(attribute, chosen) } }
+                    }
+                }
+            }
+            else -> chooseOnce {
+                val options = controller.allowedOptions(attribute)
+                val colors = when (attribute) {
+                    "status" -> details.statusColors
+                    "type" -> details.typeColors
+                    else -> emptyMap()
+                }
+                withContext(Dispatchers.EDT) {
+                    choose(
+                        anchor, if (field?.required == true) options else listOf(unset) + options,
+                        color = { it.id?.toLongOrNull()?.let(colors::get) },
+                        icon = { option -> option.href?.takeIf(Avatars::isPrincipal)?.let { avatar(it, option.title) } },
+                    ) { value ->
+                        perform { controller.update { it.link(attribute, value.href) } }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun saveProperty(attribute: String, value: JsonElement, done: (Boolean) -> Unit) {
+        perform(onDone = done) { controller.update { it.property(attribute, value) } }
+    }
+
+    private fun choose(
+        anchor: JComponent,
+        options: List<HalLink>,
+        color: (HalLink) -> Color? = { null },
+        icon: (HalLink) -> Icon? = { null },
+        onChosen: (HalLink) -> Unit,
+    ) {
+        val popup = JBPopupFactory.getInstance().createPopupChooserBuilder(options)
+            .setRenderer(swatchListRenderer<HalLink>({ it.title ?: it.href.orEmpty() }, color, icon))
+            .setNamerForFiltering { it.title.orEmpty() }
+            .setItemChosenCallback(onChosen)
+            .createPopup()
+        Avatars.getInstance().addListener(popup) { popup.content.repaint() }
+        popup.showUnderneathOf(anchor)
+    }
+
+    /** The avatar of the user (or group) at [href], [size] pixels wide (unscaled); initials until the image arrives. */
+    private fun avatar(href: String?, name: String?, size: Int = 16): Icon? =
+        Avatars.getInstance().icon(serverId, href, name, size) { controller.connection() }
+
+    private fun editDescription() {
+        val workPackage = controller.details.value?.workPackage ?: return
+        editingDescription = true
+        descriptionEditLink.isVisible = false
+        val field = MarkdownField(project, workPackage.description?.raw.orEmpty(), 12).apply {
+            border = JBUI.Borders.customLine(JBColor.border(), 1)
+        }
+        val preview = html()
+        val previewPanel = JPanel(BorderLayout()).apply { isVisible = false; add(preview) }
+        val previewLink = ActionLink(OpenProjectBundle.message("detail.description.preview")) {}
+        previewLink.addActionListener {
+            if (previewPanel.isVisible) {
+                previewPanel.isVisible = false
+                field.isVisible = true
+                previewLink.text = OpenProjectBundle.message("detail.description.preview")
+            } else {
+                perform {
+                    val rendered = controller.renderMarkdown(field.text)
+                    withContext(Dispatchers.EDT) {
+                        preview.setHtml(rendered)
+                        field.isVisible = false
+                        previewPanel.isVisible = true
+                        previewLink.text = OpenProjectBundle.message("detail.description.write")
+                    }
+                }
+            }
+        }
+        val save = JButton(OpenProjectBundle.message("detail.save"))
+        val cancel = JButton(OpenProjectBundle.message("detail.cancel"))
+        fun close() {
+            editingDescription = false
+            controller.details.value?.let { show(it) }
+        }
+        save.addActionListener {
+            save.isEnabled = false
+            val text = field.text
+            perform(onDone = { success -> save.isEnabled = true; if (success) close() }) { controller.update { it.description(text) } }
+        }
+        cancel.addActionListener { close() }
+        descriptionPanel.removeAll()
+        descriptionPanel.add(JPanel(BorderLayout()).apply {
+            isOpaque = false
+            add(previewLink, BorderLayout.NORTH)
+            add(JPanel(BorderLayout()).apply { add(field, BorderLayout.CENTER); add(previewPanel, BorderLayout.SOUTH) }, BorderLayout.CENTER)
+            add(JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(6), JBUI.scale(4))).apply { add(save); add(cancel) }, BorderLayout.SOUTH)
+        })
+        descriptionPanel.revalidate()
+        field.requestFocusInWindow()
+    }
+
+    private fun comment(text: String, internal: Boolean, done: (Boolean) -> Unit) {
+        perform(onDone = done) { controller.addComment(text, internal) }
+    }
+
+    private fun addRelation() {
+        val dialog = AddRelationDialog(project, controller::relationCandidates)
+        if (!dialog.showAndGet()) return
+        val result = dialog.result()
+        perform { controller.addRelation(result.type, result.target, result.description, result.lag) }
+    }
+
+    // ---- files ----
+
+    private fun chooseAndUpload() {
+        val files = FileChooser.chooseFiles(FileChooserDescriptorFactory.createMultipleFilesNoJarsDescriptor(), project, null)
+        upload(files.map { File(it.path) })
+    }
+
+    /** Uploads [files]; anything that is not a file (e.g. a dropped folder) is skipped. Disk access happens off the EDT. */
+    private fun upload(files: List<File>) {
+        if (files.isEmpty()) return
+        perform {
+            files.forEach { file ->
+                val bytes = withContext(Dispatchers.IO) { file.takeIf(File::isFile)?.readBytes() } ?: return@forEach
+                controller.upload(file.name, URLConnection.guessContentTypeFromName(file.name), bytes)
+            }
+        }
+    }
+
+    private fun download(attachment: Attachment) {
+        val target = FileChooserFactory.getInstance()
+            .createSaveFileDialog(FileSaverDescriptor(OpenProjectBundle.message("detail.files.download"), ""), project)
+            .save(attachment.fileName)?.file ?: return
+        perform {
+            withContext(Dispatchers.IO) { target.outputStream().use { controller.download(attachment, it) } }
+            withContext(Dispatchers.EDT) { notify(OpenProjectBundle.message("detail.files.downloaded", attachment.fileName), NotificationType.INFORMATION) }
+        }
+    }
+
+    private fun openAttachment(attachment: Attachment) {
+        perform { openInEditor(attachment) }
+    }
+
+    /** A link to an attachment (e.g. "File notes.txt added" in the activity) opens it like "Open" in the Files tab. */
+    private fun openAttachment(id: Long) {
+        perform { openInEditor(controller.attachment(id)) }
+    }
+
+    /**
+     * Downloads [attachment] into a temporary directory and opens it in an editor. The file is looked up in the VFS
+     * (a refresh, i.e. disk access) in the background; only opening the editor runs on the EDT.
+     */
+    private suspend fun openInEditor(attachment: Attachment) {
+        val file = withContext(Dispatchers.IO) {
+            val directory = FileUtil.createTempDirectory("openproject-attachment", null, true)
+            val target = File(directory, attachment.fileName.replace(Regex("[\\\\/:]"), "_"))
+            target.outputStream().use { controller.download(attachment, it) }
+            LocalFileSystem.getInstance().refreshAndFindFileByNioFile(target.toPath())
+        } ?: return
+        withContext(Dispatchers.EDT) {
+            OpenFileDescriptor(project, file).navigate(true)
+        }
+    }
+
+    // ---- helpers ----
+
+    /**
+     * Runs [action] in the background, reporting failures; a conflicting edit offers to reapply it. [onDone] is always
+     * told the outcome (also when cancelled), so that buttons disabled meanwhile are enabled again.
+     */
+    private fun perform(onDone: ((Boolean) -> Unit)? = null, action: suspend () -> Unit) {
+        cs.launch {
+            var success = false
+            try {
+                action()
+                success = true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ConcurrentChangeException) {
+                withContext(Dispatchers.EDT) {
+                    notify(OpenProjectBundle.message("detail.conflict"), NotificationType.WARNING, retry = { perform(onDone, action) })
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.EDT) { notifyError(project, describeError(e), e) }
+            } finally {
+                if (onDone != null) withContext(Dispatchers.EDT + NonCancellable) { onDone(success) }
+            }
+        }
+    }
+
+    /**
+     * Loads the choices of a dropdown and shows them via [action]; further clicks are ignored until then, so that a slow
+     * server does not end in a pile of popups.
+     */
+    private fun chooseOnce(action: suspend () -> Unit) {
+        if (choosing) return
+        choosing = true
+        perform(onDone = { choosing = false }, action = action)
+    }
+
+    private fun notify(message: String, type: NotificationType, retry: (() -> Unit)? = null) {
+        val notification = NotificationGroupManager.getInstance().getNotificationGroup("OpenProject").createNotification(message, type)
+        if (retry != null) {
+            notification.addAction(NotificationAction.createSimpleExpiring(OpenProjectBundle.message("detail.conflict.reapply")) { retry() })
+        }
+        notification.notify(project)
+    }
+
+    private fun html(): HtmlView = HtmlView({ controller.details.value?.server?.id }, ::openAttachment) { id ->
+        OpenProjectToolWindowManager.getInstance(project).openWorkPackage(serverId, id)
+    }
+
+    private val imageTag = Regex("""<img\b[^>]*>""", RegexOption.IGNORE_CASE)
+    private val imageSource = Regex("""\bsrc="([^"]+)"""", RegexOption.IGNORE_CASE)
+
+    /** Images are attachments that need the API key; until they are downloaded they are left out. */
+    private fun withoutImages(html: String): String = imageTag.replace(html) { "" }
+
+    private suspend fun resolveImages(html: String): String {
+        val base = controller.details.value?.server?.id ?: return html
+        val origin = base.substringBefore("://") + "://" + base.substringAfter("://").substringBefore('/')
+        return imageTag.findAll(html).take(30).fold(html) { result, tag ->
+            val src = imageSource.find(tag.value)?.groupValues?.get(1) ?: return@fold result
+            val absolute = if (src.startsWith("/")) origin + src else src
+            if (!absolute.startsWith(origin)) return@fold result
+            val local = images[absolute] ?: withContext(Dispatchers.IO) {
+                File(imageDirectory, "img${images.size}").also { target ->
+                    target.outputStream().use { controller.connection().api.download(absolute, it) }
+                }
+            }.also { images[absolute] = it }
+            result.replace(tag.value, tag.value.replace(src, local.toURI().toString()))
+        }
+    }
+
+    private fun toolbar(): JComponent {
+        val actions = ActionManager.getInstance()
+        val group = when (layout) {
+            Layout.TAB -> actions.getAction("OpenProject.WorkPackageToolbar") as ActionGroup
+            Layout.PREVIEW -> DefaultActionGroup().apply {
+                add(actions.getAction("OpenProject.OpenInNewTab"))
+                add(actions.getAction("OpenProject.WorkPackageToolbar") as ActionGroup)
+                onClose?.let { close ->
+                    add(Separator.getInstance())
+                    add(object : DumbAwareAction(OpenProjectBundle.message("preview.close"), null, AllIcons.Actions.Close) {
+                        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                        override fun actionPerformed(e: AnActionEvent) = close()
+                    })
+                }
+            }
+        }
+        val toolbar = actions.createActionToolbar("OpenProject.WorkPackage", group, true)
+        toolbar.targetComponent = content
+        return toolbar.component.apply { border = JBUI.Borders.customLineBottom(JBColor.border()) }
+    }
+
+    /** The subject: bold heading text that wraps onto more lines when long, and can be selected and copied. */
+    private class SubjectText : JBTextArea() {
+        init {
+            isEditable = false
+            lineWrap = true
+            wrapStyleWord = true
+            applyStyle()
+        }
+
+        /** Theme changes reset font, colors and opacity to those of text areas. */
+        override fun updateUI() {
+            super.updateUI()
+            applyStyle()
+        }
+
+        private fun applyStyle() {
+            isOpaque = false
+            border = JBUI.Borders.empty()
+            font = JBFont.h2().asBold()
+            foreground = UIUtil.getLabelForeground()
+        }
+    }
+
+    @TestOnly
+    internal fun details(): WorkPackageDetails? = controller.details.value
+
+    @TestOnly
+    internal fun isPreview(): Boolean = layout == Layout.PREVIEW
+
+    override fun dispose() {
+        cs.cancel()
+    }
+}

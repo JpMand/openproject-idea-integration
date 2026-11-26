@@ -1,0 +1,181 @@
+package com.github.jpmand.openproject.idea.ui
+
+import com.github.jpmand.openproject.idea.api.Fixtures
+import com.github.jpmand.openproject.idea.api.OpenProjectApi
+import com.github.jpmand.openproject.idea.api.model.WorkPackage
+import com.github.jpmand.openproject.idea.ui.common.StatusColors
+import com.github.jpmand.openproject.idea.ui.list.WorkPackageCellRenderer
+import com.github.jpmand.openproject.idea.ui.list.WorkPackageCells
+import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.intellij.ui.table.JBTable
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import java.awt.Color
+import java.awt.image.BufferedImage
+import javax.swing.JLabel
+import javax.swing.table.DefaultTableModel
+
+class WorkPackageCellRendererTest : BasePlatformTestCase() {
+
+    private fun workPackage(percentageDone: Int?): WorkPackage {
+        val json = Fixtures.json("work_package.json")
+        return OpenProjectApi.decodeWorkPackage(JsonObject(json + listOfNotNull(percentageDone?.let { "percentageDone" to JsonPrimitive(it) })))
+    }
+
+    private fun times(spent: String, work: String?): WorkPackage {
+        val json = Fixtures.json("work_package.json")
+        return OpenProjectApi.decodeWorkPackage(JsonObject(json + listOfNotNull("spentTime" to JsonPrimitive(spent), work?.let { "estimatedTime" to JsonPrimitive(it) })))
+    }
+
+    private val statusColor = Color(0x1098AD)
+    private val typeColor = Color(0x1A67A3)
+    private val priorityColor = Color(0xF59F00)
+
+    private fun colorOf(item: WorkPackage, columnId: String): Color? = when (columnId) {
+        "status" -> statusColor
+        "type" -> typeColor
+        "priority" -> priorityColor
+        else -> null
+    }
+
+    /** Paints the [columnId] cell of [item] (200 x 20 px) and returns the image. */
+    private fun paint(
+        item: WorkPackage,
+        columnId: String = "percentageDone",
+        selected: Boolean = false,
+        renderer: WorkPackageCellRenderer = WorkPackageCellRenderer({ _, _ -> item }, { _, _ -> columnId }, { false }, ::colorOf),
+        hover: Color? = null,
+    ): Pair<BufferedImage, JLabel> {
+        val table = JBTable(DefaultTableModel(arrayOf(arrayOf<Any>(WorkPackageCells.tableText(item, columnId))), arrayOf(columnId)))
+        val label = renderer.getTableCellRendererComponent(table, WorkPackageCells.tableText(item, columnId), selected, false, 0, 0) as JLabel
+        hover?.let {
+            // what JBTable.prepareRenderer does for the hovered (and striped) rows
+            label.isOpaque = true
+            label.background = it
+        }
+        label.setSize(200, 20)
+        val image = BufferedImage(200, 20, BufferedImage.TYPE_INT_RGB)
+        val graphics = image.createGraphics()
+        label.paint(graphics)
+        graphics.dispose()
+        return image to label
+    }
+
+    private fun isBar(rgb: Int) = Color(rgb) == WorkPackageCellRenderer.BAR
+
+    fun `test percentage cells fill a bar behind the value`() {
+        val (image, label) = paint(workPackage(50))
+        assertEquals("50%", label.text)
+        assertEquals(JLabel.CENTER, label.horizontalAlignment)
+        // left half filled (sampled at the top edge of the bar, clear of the text), right half not
+        assertTrue(isBar(image.getRGB(10, 3)))
+        assertTrue(isBar(image.getRGB(90, 3)))
+        assertFalse(isBar(image.getRGB(110, 3)))
+        assertFalse(isBar(image.getRGB(190, 3)))
+    }
+
+    fun `test unset percentage shows 0 percent without a bar`() {
+        val (image, label) = paint(workPackage(null))
+        assertEquals("0%", label.text)
+        assertFalse(isBar(image.getRGB(10, 3)))
+    }
+
+    fun `test other columns have no bar`() {
+        val (image, label) = paint(workPackage(80), columnId = "subject")
+        assertEquals(JLabel.LEADING, label.horizontalAlignment)
+        assertFalse(isBar(image.getRGB(10, 3)))
+    }
+
+    fun `test spent time over the work is highlighted`() {
+        val (image, label) = paint(times("PT3H", "PT2H"), columnId = "spentTime")
+        assertEquals(WorkPackageCellRenderer.OVERTIME, Color(image.getRGB(2, 2)))
+        assertEquals(WorkPackageCellRenderer.OVERTIME, Color(image.getRGB(195, 17)))
+        assertTrue(label.toolTipText.contains("3h"))
+        assertTrue(label.toolTipText.contains("2h"))
+    }
+
+    fun `test spent time within the work is not highlighted`() {
+        val (image, label) = paint(times("PT1H", "PT2H"), columnId = "spentTime")
+        assertFalse(WorkPackageCellRenderer.OVERTIME == Color(image.getRGB(2, 2)))
+        assertNull(label.toolTipText)
+        val (noWork, _) = paint(times("PT9H", null), columnId = "spentTime")
+        assertFalse(WorkPackageCellRenderer.OVERTIME == Color(noWork.getRGB(2, 2)))
+        // only the spent time cell is marked
+        val (otherColumn, _) = paint(times("PT3H", "PT2H"), columnId = "estimatedTime")
+        assertFalse(WorkPackageCellRenderer.OVERTIME == Color(otherColumn.getRGB(2, 2)))
+    }
+
+    fun `test selected overtime cell keeps the selection with a red edge`() {
+        val (image, _) = paint(times("PT3H", "PT2H"), columnId = "spentTime", selected = true)
+        assertEquals(WorkPackageCellRenderer.OVERTIME_EDGE, Color(image.getRGB(1, 10)))
+        assertFalse(WorkPackageCellRenderer.OVERTIME == Color(image.getRGB(150, 10)))
+    }
+
+    private val hoverColor = Color(0x123456)
+
+    /** The badge spans the start of the cell (around the text), not its edges. */
+    private fun assertBadge(image: BufferedImage, color: Color) {
+        assertEquals(color, Color(image.getRGB(6, 10)))
+        assertFalse(color == Color(image.getRGB(1, 10)))
+        assertFalse(color == Color(image.getRGB(195, 10)))
+    }
+
+    fun `test status cells show a badge in the status color`() {
+        val item = workPackage(null)
+        val (image, label) = paint(item, columnId = "status")
+        assertBadge(image, statusColor)
+        assertEquals(StatusColors.textOn(statusColor), label.foreground)
+
+        // a selected row keeps the badge, on the selection background
+        val (selected, selectedLabel) = paint(item, columnId = "status", selected = true)
+        assertBadge(selected, statusColor)
+        assertEquals(StatusColors.textOn(statusColor), selectedLabel.foreground)
+    }
+
+    fun `test type and priority cells show badges in their colors`() {
+        val item = workPackage(null)
+        val (type, typeLabel) = paint(item, columnId = "type")
+        assertBadge(type, typeColor)
+        assertEquals(Color.WHITE, typeLabel.foreground)
+        val (priority, priorityLabel) = paint(item, columnId = "priority")
+        assertBadge(priority, priorityColor)
+        assertEquals(StatusColors.textOn(priorityColor), priorityLabel.foreground)
+        // columns without colors stay plain
+        val (subject, _) = paint(item, columnId = "subject")
+        assertFalse(Color(subject.getRGB(6, 10)) in setOf(statusColor, typeColor, priorityColor))
+    }
+
+    fun `test badges and highlights stay on hovered rows`() {
+        val item = workPackage(null)
+        val (image, _) = paint(item, columnId = "type", hover = hoverColor)
+        assertBadge(image, typeColor)
+        // around the badge, the table's hover background
+        assertEquals(hoverColor, Color(image.getRGB(195, 10)))
+        val (overtime, _) = paint(times("PT3H", "PT2H"), columnId = "spentTime", hover = hoverColor)
+        assertEquals(WorkPackageCellRenderer.OVERTIME, Color(overtime.getRGB(2, 2)))
+        val (progress, _) = paint(workPackage(50), hover = hoverColor)
+        assertTrue(isBar(progress.getRGB(10, 3)))
+        assertEquals(hoverColor, Color(progress.getRGB(190, 3)))
+    }
+
+    fun `test colors of a colored cell do not leak into the next cell`() {
+        val item = workPackage(null)
+        var column = "type"
+        val renderer = WorkPackageCellRenderer({ _, _ -> item }, { _, _ -> column }, { false }, ::colorOf)
+        // the type color is dark enough for white text
+        assertEquals(Color.WHITE, paint(item, columnId = "type", renderer = renderer).second.foreground)
+        column = "subject"
+        val (image, label) = paint(item, columnId = "subject", renderer = renderer)
+        assertFalse(typeColor == Color(image.getRGB(6, 10)))
+        assertFalse(Color.WHITE == label.foreground)
+    }
+
+    fun `test user columns show the user's avatar before the name`() {
+        val item = workPackage(null)
+        val avatar = com.intellij.icons.AllIcons.General.User
+        val renderer = WorkPackageCellRenderer({ _, _ -> item }, { _, _ -> "assignee" }, { false }, ::colorOf) { _, column -> avatar.takeIf { column == "assignee" } }
+        assertSame(avatar, paint(item, columnId = "assignee", renderer = renderer).second.icon)
+        val plain = WorkPackageCellRenderer({ _, _ -> item }, { _, _ -> "subject" }, { false }, ::colorOf) { _, column -> avatar.takeIf { column == "assignee" } }
+        assertNull(paint(item, columnId = "subject", renderer = plain).second.icon)
+    }
+}

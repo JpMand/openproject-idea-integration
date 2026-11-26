@@ -1,0 +1,128 @@
+package com.github.jpmand.openproject.idea.ui.common
+
+import com.github.jpmand.openproject.idea.api.model.Priority
+import com.github.jpmand.openproject.idea.api.model.Status
+import com.github.jpmand.openproject.idea.api.model.WorkPackage
+import com.github.jpmand.openproject.idea.api.model.WorkPackageType
+import com.intellij.ui.ColoredListCellRenderer
+import com.intellij.ui.components.JBLabel
+import com.intellij.util.ui.ColorIcon
+import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
+import java.awt.Color
+import java.awt.Graphics
+import java.awt.Graphics2D
+import java.awt.RenderingHints
+import javax.swing.Icon
+import javax.swing.JList
+import javax.swing.ListCellRenderer
+
+/** The colors OpenProject assigns to statuses (`Status.color`, e.g. `#C3FAE8`) and readable text on them. */
+object StatusColors {
+    private val DARK_TEXT = Color(0x1E1F22)
+
+    /** Parses `#RRGGBB` / `#RGB`; null when unset or malformed. */
+    fun parse(hex: String?): Color? {
+        val digits = hex?.trim()?.removePrefix("#") ?: return null
+        val full = when (digits.length) {
+            3 -> digits.map { "$it$it" }.joinToString("")
+            6 -> digits
+            else -> return null
+        }
+        return full.toIntOrNull(16)?.let(::Color)
+    }
+
+    /** Status id -> color, for the statuses that have one. */
+    fun of(statuses: List<Status>): Map<Long, Color> = statuses.mapNotNull { status -> parse(status.color)?.let { status.id to it } }.toMap()
+
+    /** Priority id -> color, for the priorities that have one. */
+    fun ofPriorities(priorities: List<Priority>): Map<Long, Color> =
+        priorities.mapNotNull { priority -> parse(priority.color)?.let { priority.id to it } }.toMap()
+
+    /** Type id -> color, for the types that have one. */
+    fun ofTypes(types: List<WorkPackageType>): Map<Long, Color> = types.mapNotNull { type -> parse(type.color)?.let { type.id to it } }.toMap()
+
+    /** The color of a work package's status in [colors]. */
+    fun of(workPackage: WorkPackage, colors: Map<Long, Color>): Color? = of(workPackage, "status", colors)
+
+    /** The color of the resource a work package links as [attribute] ("status", "type") in [colors] (by id). */
+    fun of(workPackage: WorkPackage, attribute: String, colors: Map<Long, Color>): Color? =
+        workPackage.links[attribute]?.id?.toLongOrNull()?.let(colors::get)
+
+    /** Dark or white text, whichever contrasts more with [background] (WCAG contrast ratio). */
+    fun textOn(background: Color): Color =
+        if (contrast(DARK_TEXT, background) >= contrast(Color.WHITE, background)) DARK_TEXT else Color.WHITE
+
+    /** WCAG contrast ratio of two colors, from 1 (none) to 21 (black on white). */
+    fun contrast(a: Color, b: Color): Double {
+        val (light, dark) = listOf(luminance(a), luminance(b)).sortedDescending()
+        return (light + 0.05) / (dark + 0.05)
+    }
+
+    fun swatch(color: Color?): Icon? = color?.let { ColorIcon(JBUI.scale(12), it, true) }
+
+    /** Relative luminance (WCAG). */
+    fun luminance(color: Color): Double {
+        fun channel(value: Int): Double {
+            val c = value / 255.0
+            return if (c <= 0.03928) c / 12.92 else Math.pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(color.red) + 0.7152 * channel(color.green) + 0.0722 * channel(color.blue)
+    }
+}
+
+/** A status as a rounded colored badge, like OpenProject's status bubble. Without a color it is a plain label. */
+class StatusBadge(text: String = "", color: Color? = null) : JBLabel(text) {
+
+    var color: Color? = color
+        set(value) {
+            field = value
+            updateColors()
+            repaint()
+        }
+
+    init {
+        border = JBUI.Borders.empty(1, 8)
+        updateColors()
+    }
+
+    private fun updateColors() {
+        isOpaque = false
+        foreground = color?.let(StatusColors::textOn) ?: UIUtil.getLabelForeground()
+    }
+
+    /** Theme changes reset the foreground; also runs from the JLabel constructor, while [color] is still null. */
+    override fun updateUI() {
+        super.updateUI()
+        updateColors()
+    }
+
+    override fun paintComponent(g: Graphics) {
+        val color = color
+        if (color != null) {
+            val g2 = g.create() as Graphics2D
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                g2.color = color
+                val arc = JBUI.scale(10)
+                g2.fillRoundRect(0, 0, width - 1, height - 1, arc, arc)
+            } finally {
+                g2.dispose()
+            }
+        }
+        super.paintComponent(g)
+    }
+}
+
+/**
+ * List rows "■ title" with an optional color swatch (statuses in choosers and filter dropdowns), or another icon
+ * such as a user's avatar.
+ */
+fun <T> swatchListRenderer(text: (T) -> String, color: (T) -> Color?, icon: (T) -> Icon? = { null }): ListCellRenderer<T> =
+    object : ColoredListCellRenderer<T>() {
+        override fun customizeCellRenderer(list: JList<out T>, value: T?, index: Int, selected: Boolean, hasFocus: Boolean) {
+            if (value == null) return
+            this.icon = icon(value) ?: StatusColors.swatch(color(value))
+            append(text(value))
+        }
+    }
