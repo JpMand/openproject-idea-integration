@@ -5,14 +5,49 @@
     <vendor>jpmand</vendor>
     <description><![CDATA[
         <p>Work with <a href="https://www.openproject.org">OpenProject</a> work packages without leaving the IDE.</p>
+
+        <h3>Features</h3>
         <ul>
-            <li>An <b>OpenProject</b> task server for <i>Tools | Tasks &amp; Contexts</i>: open, switch and close work packages as tasks, and log time.</li>
-            <li>An <b>OpenProject</b> tool window with work package lists: configurable columns, sorting, search, quick filters
-                (project, type, status, priority, assignee) and the full set of OpenProject filters, each list in its own tab.</li>
-            <li>Work package preview next to the list and work package tabs with description, properties, activity,
-                relations and files, all editable.</li>
+            <li><b>Tasks integration</b>: an <i>OpenProject</i> server for <i>Tools | Tasks & Contexts</i>. Find work
+                packages in <i>Open Task</i> (by project, saved query, assignee or full-text search), switch between them,
+                change the status when closing a task and log the time spent.</li>
+            <li><b>Work package lists</b> in the <i>OpenProject</i> tool window, like the table in OpenProject:
+                configurable columns, sorting, search, quick filters for project, type, status, priority and assignee,
+                every filter the server offers, saved views and paging. Each list can have its own tab.</li>
+            <li><b>Work package details</b> in a preview next to the list or in a tab of their own: subject,
+                description, properties, activity, relations and files. Edit every writable attribute, add comments,
+                manage relations and upload or download files.</li>
+            <li><b>Time logging</b> with the <i>Log Time</i> dialog: date, duration (e.g. <code>1h 30m</code>),
+                activity and comment.</li>
+            <li><b>Active task at a glance</b>: the work package of the active task is visible in the status bar (with quick actions), and highlighted in
+                the lists.</li>
         </ul>
-        <p>Requires the <i>Issue Trackers</i> plugin. Configure the server in <i>Settings | Tools | Tasks | Servers</i> with an OpenProject API token.</p>
+
+        <h3>Requirements</h3>
+        <ul>
+            <li>IntelliJ IDEA 2026.1 or later.</li>
+            <li>The <i>Issue Trackers</i> plugin (<code>com.intellij.tasks</code>), which provides <i>Tasks &amp; Contexts</i>.
+                It is bundled with 2026.1; from 2026.2 on, install it from JetBrains Marketplace.</li>
+            <li>OpenProject 15 or later.</li>
+            <li>An OpenProject <b>API token</b>, created in OpenProject under <i>My account | Access tokens</i>.
+                OAuth is not supported yet.</li>
+        </ul>
+        <p>To set up, open <i>Settings | Tools | Tasks | Servers</i>, add an <b>OpenProject</b> server and enter its
+            address and API token. The tool window and time logging use the same server. The token is kept in the
+            IDE's password safe.</p>
+
+        <h3>Notes</h3>
+        <p><b>Unofficial plugin.</b> This is an independent project, not made, endorsed or supported by
+            OpenProject GmbH. Please report problems on the
+            <a href="https://github.com/JpMand/openproject-idea-integration/issues">GitHub issue tracker</a>,
+            not to OpenProject support.</p>
+        <p><b>AI-assisted development.</b> The development of this plugin is heavily supported by AI coding
+            assistants, for code, tests and documentation alike.</p>
+        <p><b>Logo usage.</b> OpenProject and the OpenProject logo are trademarks of OpenProject GmbH. The plugin logo
+            and icons are the <a href="https://www.openproject.org/press/">official OpenProject icon</a> (the
+            IDE icons resized and recolored to the IntelliJ Platform icon guidelines). They are used only to show that
+            the plugin works with OpenProject, and do not imply any affiliation with or endorsement by
+            OpenProject GmbH.</p>
     ]]></description>
 
     <dependencies>

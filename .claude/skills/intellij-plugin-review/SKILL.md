@@ -57,7 +57,7 @@ Write down:
 | Plugin ID and version, `require-restart` | `plugin.xml` / Gradle `pluginConfiguration` |
 | `since-build` / `until-build` | `pluginConfiguration.ideaVersion` or `gradle.properties` |
 | Compile platform (`platformVersion`) and exact build number | Gradle props; resolve via the releases feed below |
-| Verifier target IDEs | `intellijPlatform.pluginVerification.ides` |
+| Verifier target IDEs | `intellijPlatform.pluginVerification.ides`; with `recommended()`, the IDEs it resolves from the since/until range, as listed in the verifier output |
 | Platform branches in scope | every branch from `since-build` to the newest targeted/verified IDE |
 | Plugin dependencies and modules | `<dependencies>`, `<depends>`, `bundledPlugin(s)`, `bundledModule(s)`, `plugin(...)` |
 | Review scope | the whole codebase, or a diff/PR/branch if the user named one |
@@ -167,9 +167,9 @@ Run the verifier on the whole plugin against every branch in scope. First runs d
 ./gradlew verifyPluginProjectConfiguration verifyPluginStructure verifyPlugin --continue --console=plain \
   2>&1 | tee "$REVIEW_DIR/verifyPlugin.log"
 ```
-- If the configured IDE list misses a branch in scope (or the latest release or EAP of it), say so. Check whether
-  the build exposes a property for the list (e.g. `-PpluginVerificationIdes=...`) and rerun with it. Don't edit
-  the build file.
+- Read the IDEs that were actually verified from the log and the report directories. If they miss a branch in scope
+  (or the latest release or EAP of it), say so and mark that branch's verification *not run*. Don't edit the build
+  file.
 - Parse the per-IDE reports (`find build/reports/pluginVerifier -type f`). The files that matter:
   - `internal-api-usages.txt` and `internal-api-kt-usages.txt`
   - `compatibility-problems.txt`, and any compatibility-warnings file
@@ -256,8 +256,8 @@ Requirements:
 - several GB of disk and memory
 - the IntelliJ Platform Gradle Plugin's `runIde`
 - platform **262 or newer** for the idle-refresh trigger. On 261, the refresh fires only when the IDE frame is
-  activated, so either run the test with a newer `platformVersion` (if the build exposes the property) or mark the
-  261 runtime check *not run*.
+  activated, so either run the test on a newer platform (e.g. `-PplatformVersion=2026.2.4`; the build needs a
+  matching `tasksPluginVersion.<branch>` in `gradle.properties`) or mark the 261 runtime check *not run*.
 
 1. Write `$REVIEW_DIR/reload.init.gradle.kts`. It only adds JVM flags and a project to open, and doesn't touch the
    build:

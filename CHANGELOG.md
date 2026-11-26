@@ -4,14 +4,14 @@
 
 ## [Unreleased]
 
-First release: browse, edit and track OpenProject work packages inside the IDE.
+First release: browse, edit and track OpenProject work packages without leaving the IDE. Requires IntelliJ IDEA
+2026.1 or later with the Issue Trackers plugin, OpenProject 15 or later and an OpenProject API token.
 
 ### Added
 
-- "OpenProject" task server for Tools | Tasks & Contexts: find work packages, switch tasks, change the status on close and log time spent
-- OpenProject tool window with the work package table: configurable columns, sorting, search, quick filters, all server filters, saved views, paging
-- Work package preview and tabs: edit every writable attribute, comment, manage relations and files, with conflict detection
-- Status, type and priority in their OpenProject colors, progress bars for % Complete, and spent time highlighted when it exceeds the work
-- Active task tracking with a status bar widget, Log Time dialog and actions in Tools | OpenProject
-- Lists and work package tabs follow changes of the server URL or API token
-- Supports JetBrains IDEs 2026.1 and later, using the "Issue Trackers" (Tasks) plugin
+- Tasks integration: OpenProject task server for Tools | Tasks & Contexts
+- Time logging with the Log Time dialog
+- Work package lists in the OpenProject tool window
+- Search, quick filters, server filters and saved views
+- Work package preview and detail tab with editing, comments, relations and files
+- Active work package in the status bar

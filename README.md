@@ -113,9 +113,11 @@ The first start migrates and seeds the database and takes a few minutes. `script
 ## Trademarks
 
 OpenProject and the OpenProject logo are trademarks of OpenProject GmbH. This plugin is an independent project, not
-made, endorsed or supported by OpenProject GmbH. The tool window and task server icons are the
-[official OpenProject icon](https://www.openproject.org/press/), resized and recolored to the IntelliJ Platform icon
-guidelines; they stand for OpenProject servers and their work packages, not for this plugin.
+made, endorsed or supported by OpenProject GmbH.
+
+The plugin logo, the tool window and the task server icons are the
+[official OpenProject icon](https://www.openproject.org/press/). Their usage (both original and with variation) are only to reference OpenProject 
+and are not an identity of the plugin.
 
 ---
 Plugin based on the [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template).
