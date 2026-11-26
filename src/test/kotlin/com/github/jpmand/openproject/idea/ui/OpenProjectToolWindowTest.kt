@@ -171,8 +171,14 @@ class OpenProjectToolWindowTest : BasePlatformTestCase() {
 
         val widget = ActiveWorkPackageWidget(project)
         try {
-            assertEquals("OP AGILE-1", widget.getText())
+            // "AGILE-1 Backlogs should include tasks from subprojects", shortened to fit the status bar
+            assertEquals("AGILE-1 Backlogs should include tasks f…", widget.getText())
+            assertEquals(ActiveWorkPackageWidget.MAX_TEXT_LENGTH, widget.getText().length)
             assertTrue(widget.getTooltipText()!!.contains(workPackage.subject))
+            assertEquals(
+                listOf("Open Work Package", "Open in Browser", "Log Time…"),
+                widget.actions().getChildren(null).map { it.templatePresentation.text },
+            )
         } finally {
             Disposer.dispose(widget)
         }

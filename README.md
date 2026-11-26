@@ -24,8 +24,9 @@ Work with [OpenProject](https://www.openproject.org) work packages without leavi
   date picker, text, number and duration fields, checkboxes). Add comments; add and remove relations; upload (also by
   drag & drop), download, open and delete files.
 - **Time logging** with a *Log Time* dialog (date, duration such as `1h 30m`, activity, comment).
-- **Active task at a glance**: the work package of the active task is shown in the status bar (`OP #123`, click to
-  open it), as a banner above the work package table and as a highlighted row.
+- **Active task at a glance**: the work package of the active task is shown in the status bar (`#123 Subject`; a
+  click offers to open it, open it in the browser or log time on it), as a banner above the work package table and as
+  a highlighted row.
 
 Server address, API token and project are configured once, in the task server settings; the tool window and time
 logging use them.
@@ -61,10 +62,10 @@ taken from the IDE (<kbd>Settings</kbd> > <kbd>Appearance & Behavior</kbd> > <kb
 |---|---|
 | Show the work package list | the **OpenProject** tool window button (bottom), or <kbd>View</kbd> > <kbd>Tool Windows</kbd> > <kbd>OpenProject</kbd> |
 | Preview a work package | click it in the list, or right-click > *Open on the Right* |
-| Open a work package in a tab | double-click or <kbd>Enter</kbd> in the list, *Open in New Tab* in the preview toolbar or the context menu, *Open Task* + *Open Active Work Package*, or the status bar widget |
+| Open a work package in a tab | double-click or <kbd>Enter</kbd> in the list, *Open in New Tab* in the preview toolbar or the context menu, *Open Task* + *Open Active Work Package*, or the status bar widget > *Open Work Package* |
 | Another list | *Open as New Tab* in the list toolbar (current filters), or <kbd>+</kbd> after the last tab (new list) |
 | Start working on a work package | *Start Working* in the context menu, the preview or the work package tab (activates it as a task) |
-| Log time | <kbd>Tools</kbd> > <kbd>OpenProject</kbd> > <kbd>Log Time…</kbd>, or the list / preview / work package tab toolbar |
+| Log time | <kbd>Tools</kbd> > <kbd>OpenProject</kbd> > <kbd>Log Time…</kbd>, the list / preview / work package tab toolbar, or the status bar widget |
 | Configure columns and sorting | *Configure View…* in the list toolbar, drag column headers, click headers to sort (<kbd>Shift</kbd>+click adds a secondary sort) |
 | Filter | search box (`#123` finds a work package by id), the *Project*, *Type*, *Status*, *Priority* and *Assignee* dropdowns, the filter bar (*Filters* button, *+ Add filter*), saved queries in *View* |
 
