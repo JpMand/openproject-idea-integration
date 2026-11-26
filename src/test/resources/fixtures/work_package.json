@@ -225,7 +225,7 @@
  "id": 24971,
  "displayId": "AGILE-1",
  "lockVersion": 29,
- "subject": "Backlogs should include tasks from subprojects",
+ "subject": "Backlogs should include tasks from subprojects depending on the progress",
  "description": {
   "format": "markdown",
   "raw": "It would be great if task from subprojects included in a version of a project appear in the backlogs module.\n\nWe have a project with a common SPRINT version for our Dev Team, who is working in different projects (which are subjproject of this one) and we want to use the taskboard as a common for that sprint.\n\nDo you see it useful (or another way to accomplish that)?",
