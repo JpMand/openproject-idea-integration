@@ -25,7 +25,7 @@ val tasksPluginVersion: String? = providers.gradleProperty("tasksPluginVersion")
 dependencies {
     testImplementation("junit:junit:4.13.2")
     // Ktor itself comes from the IDE; only the mock engine is added for tests.
-    testImplementation("io.ktor:ktor-client-mock-jvm:3.4.1") { isTransitive = false }
+    testImplementation("io.ktor:ktor-client-mock-jvm:3.6.1") { isTransitive = false }
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
